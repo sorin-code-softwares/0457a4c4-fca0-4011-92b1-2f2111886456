@@ -301,6 +301,7 @@ return function(Tab, UI, Window)
     local followConn
     local followTargetName = nil
     local followDropdown
+    local followNearest = false
 
     local function listFollowOptions()
         local result = { "None" }
@@ -312,7 +313,34 @@ return function(Tab, UI, Window)
         return result
     end
 
+    local function findNearestPlayer()
+        local myChar = LocalPlayer and LocalPlayer.Character
+        local myRoot = getRootPart(myChar)
+        if not myRoot then
+            return nil
+        end
+
+        local best, bestDist = nil, math.huge
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr ~= LocalPlayer then
+                local ch = plr.Character
+                local root = ch and getRootPart(ch)
+                if root then
+                    local d = (root.Position - myRoot.Position).Magnitude
+                    if d < bestDist then
+                        bestDist = d
+                        best = plr
+                    end
+                end
+            end
+        end
+        return best
+    end
+
     local function resolveFollowTarget()
+        if followNearest then
+            return findNearestPlayer()
+        end
         if not followTargetName or followTargetName == "None" then
             return nil
         end
@@ -338,7 +366,8 @@ return function(Tab, UI, Window)
         if followEnabled then
             return
         end
-        if not resolveFollowTarget() then
+
+        if not followNearest and not resolveFollowTarget() then
             UI:Notify({
                 Title = "Follow Player",
                 Content = "Please select a valid target player first.",
@@ -427,6 +456,24 @@ return function(Tab, UI, Window)
                 UI:Notify({
                     Title = "Follow Player",
                     Content = "Follow disabled.",
+                    Type = "info",
+                })
+            end
+        end,
+    })
+
+    Tab:CreateToggle({
+        Name = "Follow Nearest Player",
+        Icon = "radar",
+        IconSource = "Material",
+        Description = "When enabled, follow always targets the nearest player instead of the selected one.",
+        CurrentValue = false,
+        Callback = function(enabled)
+            followNearest = enabled
+            if followEnabled and followNearest then
+                UI:Notify({
+                    Title = "Follow Player",
+                    Content = "Now following the nearest player.",
                     Type = "info",
                 })
             end
