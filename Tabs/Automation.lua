@@ -236,6 +236,12 @@ return function(Tab, UI, Window)
                 if not result then
                     unsafe = true
                     break
+                else
+                    local drop = origin.Y - result.Position.Y
+                    if drop > 8 then
+                        unsafe = true
+                        break
+                    end
                 end
             end
 
