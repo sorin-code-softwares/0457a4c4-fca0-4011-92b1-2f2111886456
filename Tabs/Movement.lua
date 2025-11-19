@@ -450,8 +450,6 @@ return function(Tab, UI, Window)
                 -- fly mode (BodyVelocity-based)
                 if not followFlying then
                     followFlying = true
-                    setCharacterCollide(myChar, false)
-
                     if followBodyVelocity then
                         pcall(function()
                             followBodyVelocity:Destroy()
@@ -464,6 +462,10 @@ return function(Tab, UI, Window)
                     followBodyVelocity.Velocity = Vector3.new(0, 0, 0)
                     followBodyVelocity.Parent = myRoot
                 end
+
+                -- ensure noclip is enforced every frame while flying,
+                -- in case another feature temporarily re-enabled collisions
+                setCharacterCollide(myChar, false)
 
                 if distance > 1 then
                     local dir = delta.Unit
