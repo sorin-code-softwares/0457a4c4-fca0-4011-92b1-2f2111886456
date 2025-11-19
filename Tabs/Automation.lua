@@ -201,9 +201,6 @@ return function(Tab, UI, Window)
             return
         end
 
-        local rayParams = RaycastParams.new()
-        rayParams.FilterType = Enum.RaycastFilterType.Exclude
-
         edgeSafetyConn = RunService.Heartbeat:Connect(function()
             local character = LocalPlayer and LocalPlayer.Character
             local humanoid = getHumanoid(character)
@@ -221,17 +218,28 @@ return function(Tab, UI, Window)
             if moveDir.Magnitude <= 0.01 then
                 return
             end
-
             moveDir = Vector3.new(moveDir.X, 0, moveDir.Z).Unit
 
-            -- look a bit further ahead and deeper down to spot ledges
-            local ahead = root.Position + moveDir * 4.5
+            -- probe a bit in front of the player at two distances;
+            -- if any of them has no ground underneath, kill horizontal speed.
+            local rayParams = RaycastParams.new()
+            rayParams.FilterType = Enum.RaycastFilterType.Exclude
             rayParams.FilterDescendantsInstances = { character }
 
-            -- look in front, then down: if no floor is detected in a reasonable distance,
-            -- cancel horizontal velocity so you do not keep running into the void.
-            local result = Workspace:Raycast(ahead + Vector3.new(0, 3, 0), Vector3.new(0, -20, 0), rayParams)
-            if not result then
+            local origin = root.Position
+            local distances = { 3, 6 }
+            local unsafe = false
+
+            for _, dist in ipairs(distances) do
+                local ahead = origin + moveDir * dist
+                local result = Workspace:Raycast(ahead + Vector3.new(0, 3, 0), Vector3.new(0, -20, 0), rayParams)
+                if not result then
+                    unsafe = true
+                    break
+                end
+            end
+
+            if unsafe then
                 local v = root.AssemblyLinearVelocity
                 if v.Y <= 0 then
                     root.AssemblyLinearVelocity = Vector3.new(0, v.Y, 0)
