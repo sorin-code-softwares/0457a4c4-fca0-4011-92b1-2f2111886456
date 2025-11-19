@@ -405,6 +405,12 @@ return function(Tab, UI, Window)
 
         if followFlying then
             local myChar = LocalPlayer and LocalPlayer.Character
+            local myHum = getHumanoid(myChar)
+            if myHum then
+                pcall(function()
+                    myHum:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
+                end)
+            end
             if not noclipEnabled then
                 setCharacterCollide(myChar, true)
             end
@@ -455,6 +461,14 @@ return function(Tab, UI, Window)
             if not (targetRoot and myHum and myRoot) then
                 return
             end
+
+            -- prevent being locked into seats while follow is active
+            if myHum.Sit then
+                myHum.Sit = false
+            end
+            pcall(function()
+                myHum:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
+            end)
 
             local delta = targetRoot.Position - myRoot.Position
             local horizontalDelta = Vector3.new(delta.X, 0, delta.Z)
