@@ -894,6 +894,26 @@ return function(Tab, UI, Window)
         end,
     })
 
+    -- Fly speed slider
+    local flySpeedSlider = Tab:CreateSlider({
+        Name = "Fly Speed",
+        Icon = "speed",
+        IconSource = "Material",
+        Min = 10,
+        Max = 200,
+        Step = 5,
+        Default = flySpeed,
+        Description = "Controls how fast manual fly moves.",
+        Callback = function(value)
+            local num = tonumber(value)
+            if num then
+                flySpeed = math.clamp(num, 10, 200)
+            end
+        end,
+    })
+
+    flySpeedSlider:Set({ CurrentValue = flySpeed })
+
     -- Anti-fall velocity clamp
     local antiFallEnabled = false
     local antiFallConn
