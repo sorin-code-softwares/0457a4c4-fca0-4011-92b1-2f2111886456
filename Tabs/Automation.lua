@@ -212,8 +212,8 @@ return function(Tab, UI, Window)
                 return
             end
 
-            -- ignore while jumping/flying to avoid fighting with other features
-            if not isOnGround(humanoid) or humanoid.PlatformStand then
+            -- ignore while custom-flying to avoid fighting with other features
+            if humanoid.PlatformStand then
                 return
             end
 
@@ -224,15 +224,17 @@ return function(Tab, UI, Window)
 
             moveDir = Vector3.new(moveDir.X, 0, moveDir.Z).Unit
 
-            local ahead = root.Position + moveDir * 3
+            -- look a bit further ahead and deeper down to spot ledges
+            local ahead = root.Position + moveDir * 4.5
             rayParams.FilterDescendantsInstances = { character }
 
-            -- look a bit in front, then down: if no floor is detected, cancel horizontal movement
-            local result = Workspace:Raycast(ahead + Vector3.new(0, 2, 0), Vector3.new(0, -8, 0), rayParams)
+            -- look in front, then down: if no floor is detected in a reasonable distance,
+            -- cancel horizontal velocity so you do not keep running into the void.
+            local result = Workspace:Raycast(ahead + Vector3.new(0, 3, 0), Vector3.new(0, -20, 0), rayParams)
             if not result then
-                local vel = root.Velocity
-                if vel.Y <= 0 then
-                    root.Velocity = Vector3.new(0, vel.Y, 0)
+                local v = root.AssemblyLinearVelocity
+                if v.Y <= 0 then
+                    root.AssemblyLinearVelocity = Vector3.new(0, v.Y, 0)
                 end
             end
         end)
@@ -254,4 +256,3 @@ return function(Tab, UI, Window)
         end,
     })
 end
-
