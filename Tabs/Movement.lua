@@ -679,7 +679,8 @@ return function(Tab, UI, Window)
             return
         end
 
-        noclipConn = RunService.Heartbeat:Connect(function()
+        -- use Stepped so collisions are disabled before physics each frame
+        noclipConn = RunService.Stepped:Connect(function()
             local ch = LocalPlayer and LocalPlayer.Character
             if ch then
                 setCharacterCollide(ch, false)
