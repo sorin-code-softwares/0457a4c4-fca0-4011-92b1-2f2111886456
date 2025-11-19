@@ -153,7 +153,7 @@ return function(Tab, UI, Window)
         Name = "Walk Fling",
         Icon = "directions_run",
         IconSource = "Material",
-        Description = "Experimental walk-based fling using velocity desync. High detection risk in strong anti-cheats.",
+        Description = "Walk-based fling. High detection risk in strong anti-cheats.",
         CurrentValue = false,
         Callback = function(enabled)
             if enabled then
@@ -252,7 +252,7 @@ return function(Tab, UI, Window)
         Name = "Slide Speed (grounded)",
         Icon = "run_circle",
         IconSource = "Material",
-        Description = "Ground-based speed boost; uses CFrame sliding instead of editing Humanoid.WalkSpeed.",
+        Description = "Speed boost; uses CFrame sliding.",
         CurrentValue = false,
         Callback = function(enabled)
             if enabled then
@@ -281,7 +281,7 @@ return function(Tab, UI, Window)
         Max = SLIDER_MAX,
         Step = 1,
         Default = slideStrength,
-        Description = "Controls how strong the slide speed is. Higher values = faster sliding while grounded.",
+        Description = "Higher values = faster sliding.",
         Callback = function(value)
             local num = tonumber(value)
             if num then
@@ -396,15 +396,6 @@ return function(Tab, UI, Window)
 
     local function startFollow()
         if followEnabled then
-            return
-        end
-
-        if not followNearest and not resolveFollowTarget() then
-            UI:Notify({
-                Title = "Follow Player",
-                Content = "Please select a valid target player first.",
-                Type = "warning",
-            })
             return
         end
 
@@ -582,7 +573,7 @@ return function(Tab, UI, Window)
         Name = "Enable Fly Follow",
         Icon = "flight",
         IconSource = "Material",
-        Description = "When enabled, follow switches to a simple flying mode with noclip if the target is not reachable on foot (e.g. above you or while you are falling).",
+        Description = "When enabled, follow switches to a simple flying mode with noclip if the target is not reachable on foot.",
         CurrentValue = false,
         Callback = function(enabled)
             followFlyEnabled = enabled
