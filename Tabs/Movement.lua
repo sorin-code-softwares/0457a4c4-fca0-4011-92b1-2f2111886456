@@ -509,11 +509,12 @@ return function(Tab, UI, Window)
                 end
 
                 if onGround then
-                    if distance > 5 then
+                    if distance > 10 then
                         followWanderOffset = nil
                         myHum:MoveTo(targetRoot.Position)
                     else
-                        local radius = 4
+                        -- pick a small orbit/wander radius, but never larger than our current distance
+                        local radius = math.clamp(distance, 3, 7)
                         if followOrbit then
                             -- orbit in a small circle around the target
                             followOrbitAngle = followOrbitAngle + (1.5 * dt)
@@ -667,6 +668,13 @@ return function(Tab, UI, Window)
             -- only restore collisions if no other feature needs noclip
             if character and not followFlying and not flyEnabled then
                 setCharacterCollide(character, true)
+
+                -- nudge humanoid back into a grounded state so you don't
+                -- keep hovering slightly above the floor
+                local humanoid = getHumanoid(character)
+                if humanoid then
+                    humanoid:ChangeState(Enum.HumanoidStateType.Landed)
+                end
             end
             return
         end
@@ -934,9 +942,9 @@ return function(Tab, UI, Window)
 
         antiFallConn = RunService.Heartbeat:Connect(function()
             local character = LocalPlayer and LocalPlayer.Character
-            local root = getRootPart(character)
             local humanoid = getHumanoid(character)
-            if not (root and humanoid) then
+            local root = getRootPart(character)
+            if not (character and humanoid and root) then
                 return
             end
 
@@ -945,15 +953,19 @@ return function(Tab, UI, Window)
                 return
             end
 
-            local vel = root.Velocity
-            if vel.Y < -80 then
-                local rayParams = RaycastParams.new()
-                rayParams.FilterType = Enum.RaycastFilterType.Exclude
-                rayParams.FilterDescendantsInstances = { character }
+            -- only while actually in the air
+            if humanoid.FloorMaterial ~= Enum.Material.Air then
+                return
+            end
 
-                local result = Workspace:Raycast(root.Position, Vector3.new(0, -10, 0), rayParams)
-                if result and result.Instance and result.Instance.CanCollide ~= false then
-                    root.Velocity = Vector3.new(vel.X, -20, vel.Z)
+            local vy = root.AssemblyLinearVelocity.Y
+            if vy < -40 then -- MinFallSpeed
+                local cap = -65 -- CapDownSpeed
+                local newVy = math.max(vy, cap)
+                if newVy ~= vy then
+                    local v = root.AssemblyLinearVelocity
+                    local blendedY = vy + (newVy - vy) * 0.35 -- BlendFactor
+                    root.AssemblyLinearVelocity = Vector3.new(v.X, blendedY, v.Z)
                 end
             end
         end)
