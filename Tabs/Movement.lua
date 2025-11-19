@@ -4,6 +4,7 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
+local UserInputService = game:GetService("UserInputService")
 
 local LocalPlayer = Players.LocalPlayer
 
@@ -305,6 +306,8 @@ return function(Tab, UI, Window)
     local followFlyEnabled = false
     local followFlying = false
     local followBodyVelocity
+    local followWanderOffset
+    local followNextWanderTime = 0
 
     local function setCharacterCollide(character, collide)
         if not character then
@@ -485,8 +488,22 @@ return function(Tab, UI, Window)
                     end
                 end
 
-                if distance > 5 and onGround then
-                    myHum:MoveTo(targetRoot.Position)
+                if onGround then
+                    if distance > 5 then
+                        followWanderOffset = nil
+                        myHum:MoveTo(targetRoot.Position)
+                    else
+                        local now = tick()
+                        if not followWanderOffset or now >= followNextWanderTime then
+                            local radius = 4
+                            local angle = math.random() * math.pi * 2
+                            followWanderOffset = Vector3.new(math.cos(angle), 0, math.sin(angle)) * radius
+                            followNextWanderTime = now + math.random(2, 4)
+                        end
+
+                        local wanderPos = targetRoot.Position + followWanderOffset
+                        myHum:MoveTo(wanderPos)
+                    end
                 end
             end
         end)
@@ -582,4 +599,207 @@ return function(Tab, UI, Window)
         end
         refreshFollowOptions()
     end)
+
+    --------------------------------------------------------------------
+    -- Extra movement utilities (infinite jump, manual fly)
+    --------------------------------------------------------------------
+
+    Tab:CreateSection("Extra Movement")
+
+    -- Infinite jump
+    local infiniteJumpEnabled = false
+    local infiniteJumpConn
+
+    local function setInfiniteJump(state)
+        infiniteJumpEnabled = state
+
+        if infiniteJumpConn then
+            pcall(function()
+                infiniteJumpConn:Disconnect()
+            end)
+            infiniteJumpConn = nil
+        end
+
+        if not infiniteJumpEnabled then
+            return
+        end
+
+        infiniteJumpConn = UserInputService.JumpRequest:Connect(function()
+            local character = LocalPlayer and LocalPlayer.Character
+            local humanoid = getHumanoid(character)
+            if humanoid then
+                humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+                humanoid.Jump = true
+            end
+        end)
+    end
+
+    Tab:CreateToggle({
+        Name = "Infinite Jump",
+        Icon = "arrow_upward",
+        IconSource = "Material",
+        Description = "Allows you to jump again while mid-air.",
+        CurrentValue = false,
+        Callback = function(enabled)
+            setInfiniteJump(enabled)
+            UI:Notify({
+                Title = "Infinite Jump",
+                Content = enabled and "Infinite jump enabled." or "Infinite jump disabled.",
+                Type = "info",
+            })
+        end,
+    })
+
+    -- Manual fly
+    local flyEnabled = false
+    local flyConn
+    local flyBodyVelocity
+    local flyBodyGyro
+    local flySpeed = 50
+
+    local function stopFly()
+        flyEnabled = false
+
+        if flyConn then
+            pcall(function()
+                flyConn:Disconnect()
+            end)
+            flyConn = nil
+        end
+
+        if flyBodyVelocity then
+            pcall(function()
+                flyBodyVelocity:Destroy()
+            end)
+            flyBodyVelocity = nil
+        end
+
+        if flyBodyGyro then
+            pcall(function()
+                flyBodyGyro:Destroy()
+            end)
+            flyBodyGyro = nil
+        end
+
+        local character = LocalPlayer and LocalPlayer.Character
+        local humanoid = getHumanoid(character)
+        if humanoid then
+            humanoid.PlatformStand = false
+        end
+        setCharacterCollide(character, true)
+    end
+
+    local function startFly()
+        if flyEnabled then
+            return
+        end
+
+        local character = LocalPlayer and LocalPlayer.Character
+        local humanoid = getHumanoid(character)
+        local root = getRootPart(character)
+        local camera = Workspace.CurrentCamera
+
+        if not (humanoid and root and camera) then
+            UI:Notify({
+                Title = "Fly",
+                Content = "Character, Humanoid or RootPart not available.",
+                Type = "warning",
+            })
+            return
+        end
+
+        flyEnabled = true
+        humanoid.PlatformStand = true
+        setCharacterCollide(character, false)
+
+        flyBodyVelocity = Instance.new("BodyVelocity")
+        flyBodyVelocity.MaxForce = Vector3.new(1e5, 1e5, 1e5)
+        flyBodyVelocity.Velocity = Vector3.new(0, 0, 0)
+        flyBodyVelocity.Parent = root
+
+        flyBodyGyro = Instance.new("BodyGyro")
+        flyBodyGyro.MaxTorque = Vector3.new(1e5, 1e5, 1e5)
+        flyBodyGyro.CFrame = camera.CFrame
+        flyBodyGyro.P = 1e4
+        flyBodyGyro.Parent = root
+
+        if flyConn then
+            pcall(function()
+                flyConn:Disconnect()
+            end)
+            flyConn = nil
+        end
+
+        flyConn = RunService.RenderStepped:Connect(function(dt)
+            if not flyEnabled then
+                return
+            end
+
+            local character = LocalPlayer and LocalPlayer.Character
+            local root = getRootPart(character)
+            local humanoid = getHumanoid(character)
+            local camera = Workspace.CurrentCamera
+
+            if not (root and humanoid and camera and flyBodyVelocity and flyBodyGyro) then
+                stopFly()
+                return
+            end
+
+            local moveDir = Vector3.new(0, 0, 0)
+            local camCF = camera.CFrame
+
+            if UserInputService:IsKeyDown(Enum.KeyCode.W) then
+                moveDir = moveDir + camCF.LookVector
+            end
+            if UserInputService:IsKeyDown(Enum.KeyCode.S) then
+                moveDir = moveDir - camCF.LookVector
+            end
+            if UserInputService:IsKeyDown(Enum.KeyCode.A) then
+                moveDir = moveDir - camCF.RightVector
+            end
+            if UserInputService:IsKeyDown(Enum.KeyCode.D) then
+                moveDir = moveDir + camCF.RightVector
+            end
+            if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+                moveDir = moveDir + Vector3.new(0, 1, 0)
+            end
+            if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) or UserInputService:IsKeyDown(Enum.KeyCode.Q) then
+                moveDir = moveDir + Vector3.new(0, -1, 0)
+            end
+
+            if moveDir.Magnitude > 0 then
+                moveDir = moveDir.Unit
+            end
+
+            flyBodyVelocity.Velocity = moveDir * flySpeed
+            flyBodyGyro.CFrame = CFrame.new(root.Position, root.Position + camCF.LookVector)
+        end)
+    end
+
+    Tab:CreateToggle({
+        Name = "Fly",
+        Icon = "flight_takeoff",
+        IconSource = "Material",
+        Description = "Manual fly mode (WASD + Space / Ctrl).",
+        CurrentValue = false,
+        Callback = function(enabled)
+            if enabled then
+                startFly()
+                if flyEnabled then
+                    UI:Notify({
+                        Title = "Fly",
+                        Content = "Fly enabled (use WASD + Space/Ctrl).",
+                        Type = "info",
+                    })
+                end
+            else
+                stopFly()
+                UI:Notify({
+                    Title = "Fly",
+                    Content = "Fly disabled.",
+                    Type = "info",
+                })
+            end
+        end,
+    })
 end
