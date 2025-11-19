@@ -290,5 +290,154 @@ return function(Tab, UI, Window)
     })
 
     slideSlider:Set({ CurrentValue = slideStrength })
-end
 
+    --------------------------------------------------------------------
+    -- Follow Player (MoveTo-based)
+    --------------------------------------------------------------------
+
+    Tab:CreateSection("Follow Player")
+
+    local followEnabled = false
+    local followConn
+    local followTargetName = nil
+    local followDropdown
+
+    local function listFollowOptions()
+        local result = { "None" }
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr ~= LocalPlayer then
+                table.insert(result, plr.Name)
+            end
+        end
+        return result
+    end
+
+    local function resolveFollowTarget()
+        if not followTargetName or followTargetName == "None" then
+            return nil
+        end
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr.Name == followTargetName then
+                return plr
+            end
+        end
+        return nil
+    end
+
+    local function stopFollow()
+        followEnabled = false
+        if followConn then
+            pcall(function()
+                followConn:Disconnect()
+            end)
+            followConn = nil
+        end
+    end
+
+    local function startFollow()
+        if followEnabled then
+            return
+        end
+        if not resolveFollowTarget() then
+            UI:Notify({
+                Title = "Follow Player",
+                Content = "Please select a valid target player first.",
+                Type = "warning",
+            })
+            return
+        end
+
+        followEnabled = true
+
+        if followConn then
+            pcall(function()
+                followConn:Disconnect()
+            end)
+            followConn = nil
+        end
+
+        followConn = RunService.Heartbeat:Connect(function()
+            if not followEnabled then
+                return
+            end
+
+            local targetPlayer = resolveFollowTarget()
+            if not targetPlayer then
+                return
+            end
+
+            local targetChar = targetPlayer.Character
+            local targetRoot = targetChar and getRootPart(targetChar)
+
+            local myChar = LocalPlayer and LocalPlayer.Character
+            local myHum = getHumanoid(myChar)
+            local myRoot = getRootPart(myChar)
+
+            if not (targetRoot and myHum and myRoot) then
+                return
+            end
+
+            local distance = (targetRoot.Position - myRoot.Position).Magnitude
+            if distance > 5 then
+                myHum:MoveTo(targetRoot.Position)
+            end
+        end)
+    end
+
+    local function refreshFollowOptions()
+        if not followDropdown then
+            return
+        end
+        followDropdown:Set({
+            Options = listFollowOptions(),
+            CurrentValue = followTargetName or "None",
+        })
+    end
+
+    followDropdown = Tab:CreateDropdown({
+        Name = "Target Player",
+        Icon = "person_search",
+        IconSource = "Material",
+        Options = listFollowOptions(),
+        Default = "None",
+        Description = "Choose which player your character should follow.",
+        Callback = function(selected)
+            followTargetName = selected == "None" and nil or selected
+        end,
+    })
+
+    Tab:CreateToggle({
+        Name = "Enable Follow",
+        Icon = "person_pin_circle",
+        IconSource = "Material",
+        Description = "Automatically walks towards the selected player.",
+        CurrentValue = false,
+        Callback = function(enabled)
+            if enabled then
+                startFollow()
+                if followEnabled then
+                    UI:Notify({
+                        Title = "Follow Player",
+                        Content = "Follow enabled.",
+                        Type = "info",
+                    })
+                end
+            else
+                stopFollow()
+                UI:Notify({
+                    Title = "Follow Player",
+                    Content = "Follow disabled.",
+                    Type = "info",
+                })
+            end
+        end,
+    })
+
+    Players.PlayerAdded:Connect(refreshFollowOptions)
+    Players.PlayerRemoving:Connect(function(plr)
+        if plr.Name == followTargetName then
+            followTargetName = nil
+        end
+        refreshFollowOptions()
+    end)
+end
