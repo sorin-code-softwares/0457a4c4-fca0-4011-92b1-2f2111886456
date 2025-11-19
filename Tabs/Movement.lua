@@ -213,8 +213,6 @@ return function(Tab, UI, Window)
         end
         slideEnabled = true
 
-        stopSlide()
-
         local rayParams = RaycastParams.new()
         rayParams.FilterType = Enum.RaycastFilterType.Exclude
 
