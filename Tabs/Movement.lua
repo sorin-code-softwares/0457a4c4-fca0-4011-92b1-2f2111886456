@@ -652,6 +652,28 @@ return function(Tab, UI, Window)
     -- Standalone noclip
     local noclipConn
 
+    local function snapCharacterToGround(character)
+        local root = getRootPart(character)
+        if not root then
+            return
+        end
+
+        local rayParams = RaycastParams.new()
+        rayParams.FilterType = Enum.RaycastFilterType.Exclude
+        rayParams.FilterDescendantsInstances = { character }
+
+        local origin = root.Position
+        local result = Workspace:Raycast(origin, Vector3.new(0, -20, 0), rayParams)
+        if result and result.Instance and result.Instance.CanCollide ~= false then
+            local humanoid = getHumanoid(character)
+            local hipHeight = humanoid and humanoid.HipHeight or 2
+            local targetY = result.Position.Y + hipHeight
+            local newPos = Vector3.new(origin.X, targetY, origin.Z)
+            local lookDir = root.CFrame.LookVector
+            root.CFrame = CFrame.new(newPos, newPos + lookDir)
+        end
+    end
+
     local function setNoclip(state)
         noclipEnabled = state
 
@@ -675,6 +697,9 @@ return function(Tab, UI, Window)
                 if humanoid then
                     humanoid:ChangeState(Enum.HumanoidStateType.Landed)
                 end
+
+                 -- snap root back down to the nearest floor below
+                 snapCharacterToGround(character)
             end
             return
         end
