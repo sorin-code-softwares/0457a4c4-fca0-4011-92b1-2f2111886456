@@ -1,8 +1,9 @@
 -- Sorin Core Hub - Movement & Fling tab
--- Walk fling and velocity-based walkspeed (less obvious for anti-cheats).
+-- Walk fling + slide-based movement speed (more subtle than pure WalkSpeed edits).
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
 
 local LocalPlayer = Players.LocalPlayer
 
@@ -15,12 +16,31 @@ local function getRootPart(character)
         or character:FindFirstChild("UpperTorso")
 end
 
-return function(Tab, UI, Window)
-    Tab:CreateSection("Walk Fling")
+local function getHumanoid(character)
+    character = character or LocalPlayer.Character
+    return character and character:FindFirstChildOfClass("Humanoid")
+end
 
+local function isOnGround(humanoid)
+    if not humanoid then
+        return false
+    end
+
+    local state = humanoid:GetState()
+    if state == Enum.HumanoidStateType.Running
+        or state == Enum.HumanoidStateType.RunningNoPhysics then
+        return true
+    end
+
+    return humanoid.FloorMaterial and humanoid.FloorMaterial ~= Enum.Material.Air
+end
+
+return function(Tab, UI, Window)
     --------------------------------------------------------------------
     -- Walk Fling (velocity desync)
     --------------------------------------------------------------------
+
+    Tab:CreateSection("Walk Fling")
 
     local walkFlingEnabled = false
     local walkFlingLoopRunning = false
@@ -50,8 +70,7 @@ return function(Tab, UI, Window)
     end
 
     local function neutralizeVelocity()
-        local player = LocalPlayer
-        local character = player and player.Character
+        local character = LocalPlayer and LocalPlayer.Character
         local root = getRootPart(character)
         if root then
             root.Velocity = Vector3.new(0, 0, 0)
@@ -80,13 +99,12 @@ return function(Tab, UI, Window)
                     break
                 end
 
-                local player = LocalPlayer
-                local character = player and player.Character
+                local character = LocalPlayer and LocalPlayer.Character
                 local root = getRootPart(character)
 
                 while walkFlingEnabled and not (character and character.Parent and root and root.Parent) do
                     RunService.Heartbeat:Wait()
-                    character = player and player.Character
+                    character = LocalPlayer and LocalPlayer.Character
                     root = getRootPart(character)
                 end
 
@@ -104,7 +122,7 @@ return function(Tab, UI, Window)
                     break
                 end
 
-                character = player and player.Character
+                character = LocalPlayer and LocalPlayer.Character
                 root = getRootPart(character)
                 if character and character.Parent and root and root.Parent then
                     root.Velocity = vel
@@ -115,7 +133,7 @@ return function(Tab, UI, Window)
                     break
                 end
 
-                character = player and player.Character
+                character = LocalPlayer and LocalPlayer.Character
                 root = getRootPart(character)
                 if character and character.Parent and root and root.Parent then
                     root.Velocity = vel + Vector3.new(0, moveOffset, 0)
@@ -129,7 +147,7 @@ return function(Tab, UI, Window)
         end)
     end
 
-    local walkFlingToggle = Tab:CreateToggle({
+    Tab:CreateToggle({
         Name = "Walk Fling",
         Icon = "directions_run",
         IconSource = "Material",
@@ -155,95 +173,143 @@ return function(Tab, UI, Window)
     })
 
     --------------------------------------------------------------------
-    -- Velocity-based Walkspeed
+    -- Slide Speed (grounded, MoveDirection-based, speed-capped)
     --------------------------------------------------------------------
 
-    Tab:CreateSection("Velocity Walkspeed")
+    Tab:CreateSection("Slide Speed")
 
-    local velocityWalkEnabled = false
-    local velocityLoopRunning = false
-    local velocitySpeed = 30
+    local UI_MIN, UI_MAX = 0.1, 1.0        -- what the user sees
+    local MUL_MIN, MUL_MAX = 0.8, 8.0      -- internal effective multiplier range
 
-    local function stopVelocityWalk()
-        velocityWalkEnabled = false
+    local function remap(x, a1, a2, b1, b2)
+        if a2 == a1 then
+            return b1
+        end
+        return b1 + ((x - a1) * (b2 - b1) / (a2 - a1))
     end
 
-    local function startVelocityWalk()
-        velocityWalkEnabled = true
+    local slideEnabled = false
+    local slideConn
+    local slideUiFactor = 1.0
 
-        if velocityLoopRunning then
+    local function getEffectiveMultiplier()
+        local t = math.clamp(slideUiFactor, UI_MIN, UI_MAX)
+        return math.clamp(remap(t, UI_MIN, UI_MAX, MUL_MIN, MUL_MAX), MUL_MIN, MUL_MAX)
+    end
+
+    local function stopSlide()
+        slideEnabled = false
+        if slideConn then
+            pcall(function()
+                slideConn:Disconnect()
+            end)
+            slideConn = nil
+        end
+    end
+
+    local function startSlide()
+        if slideEnabled then
             return
         end
-        velocityLoopRunning = true
+        slideEnabled = true
 
-        task.spawn(function()
-            while velocityWalkEnabled do
-                RunService.Heartbeat:Wait()
-                if not velocityWalkEnabled then
-                    break
-                end
+        stopSlide()
 
-                local player = LocalPlayer
-                local character = player and player.Character
-                local humanoid = character and character:FindFirstChildWhichIsA("Humanoid")
-                local root = getRootPart(character)
+        local rayParams = RaycastParams.new()
+        rayParams.FilterType = Enum.RaycastFilterType.Exclude
 
-                if humanoid and root then
-                    local moveDir = humanoid.MoveDirection
-                    if moveDir.Magnitude > 0 then
-                        local baseVel = root.Velocity
-                        local extra = moveDir.Unit * velocitySpeed
-                        local horizontalBase = Vector3.new(baseVel.X, 0, baseVel.Z)
-                        local newHorizontal = horizontalBase + Vector3.new(extra.X, 0, extra.Z)
-                        root.Velocity = Vector3.new(newHorizontal.X, baseVel.Y, newHorizontal.Z)
-                    end
-                end
+        slideConn = RunService.RenderStepped:Connect(function(dt)
+            if not slideEnabled then
+                return
             end
 
-            velocityLoopRunning = false
+            local character = LocalPlayer and LocalPlayer.Character
+            local humanoid = getHumanoid(character)
+            local root = getRootPart(character)
+            if not (humanoid and root and character) then
+                return
+            end
+
+            if humanoid.Sit or not isOnGround(humanoid) then
+                return
+            end
+
+            local moveDir = humanoid.MoveDirection
+            if moveDir.Magnitude <= 0.01 then
+                return
+            end
+            moveDir = Vector3.new(moveDir.X, 0, moveDir.Z).Unit
+
+            local base = (humanoid.WalkSpeed and humanoid.WalkSpeed > 0) and humanoid.WalkSpeed or 16
+            local multiplier = getEffectiveMultiplier()
+            local target = base * multiplier
+
+            local vel = root.AssemblyLinearVelocity
+            local curHorz = Vector3.new(vel.X, 0, vel.Z).Magnitude
+            if curHorz >= target - 0.05 then
+                return
+            end
+
+            local deficit = target - curHorz
+            local maxExtra = math.clamp(target * 0.12 * dt, 0, 10.0 * dt)
+            local extra = math.clamp(deficit * 0.6 * dt, 0, maxExtra)
+            if extra <= 0 then
+                return
+            end
+
+            rayParams.FilterDescendantsInstances = { character }
+            local origin = root.Position
+            local direction = moveDir * (extra + 0.2)
+            local hit = Workspace:Raycast(origin, direction, rayParams)
+            if hit and hit.Instance and hit.Instance.CanCollide ~= false then
+                return
+            end
+
+            root.CFrame = root.CFrame + (moveDir * extra)
         end)
     end
 
-    local velocityToggle = Tab:CreateToggle({
-        Name = "Enable Velocity Walkspeed",
+    Tab:CreateToggle({
+        Name = "Slide Speed (grounded)",
         Icon = "run_circle",
         IconSource = "Material",
-        Description = "Adds extra speed using Velocity instead of changing Humanoid.WalkSpeed.",
+        Description = "Ground-based speed boost; uses CFrame sliding instead of editing Humanoid.WalkSpeed.",
         CurrentValue = false,
         Callback = function(enabled)
             if enabled then
-                startVelocityWalk()
+                startSlide()
                 UI:Notify({
-                    Title = "Velocity Walkspeed",
-                    Content = "Velocity Walkspeed enabled.",
+                    Title = "Slide Speed",
+                    Content = "Slide Speed enabled.",
                     Type = "info",
                 })
             else
-                stopVelocityWalk()
+                stopSlide()
                 UI:Notify({
-                    Title = "Velocity Walkspeed",
-                    Content = "Velocity Walkspeed disabled.",
+                    Title = "Slide Speed",
+                    Content = "Slide Speed disabled.",
                     Type = "info",
                 })
             end
         end,
     })
 
-    local speedSlider = Tab:CreateSlider({
-        Name = "Velocity Speed",
+    local slideSlider = Tab:CreateSlider({
+        Name = "Slide Multiplier (0.1–1.0)",
         Icon = "speed",
         IconSource = "Material",
-        Min = 0,
-        Max = 120,
-        Step = 5,
-        Default = velocitySpeed,
-        Description = "Controls how strong the additional Velocity push is.",
+        Min = UI_MIN,
+        Max = UI_MAX,
+        Step = 0.05,
+        Default = slideUiFactor,
+        Description = "Controls how strong the slide speed multiplier is. Low = subtle, high = aggressive.",
         Callback = function(value)
-            velocitySpeed = value
+            local num = tonumber(value)
+            if num then
+                slideUiFactor = math.clamp(num, UI_MIN, UI_MAX)
+            end
         end,
     })
 
-    -- keep slider and internal state in sync if needed from outside
-    speedSlider:Set({ CurrentValue = velocitySpeed })
+    slideSlider:Set({ CurrentValue = slideUiFactor })
 end
-
