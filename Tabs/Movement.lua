@@ -44,6 +44,9 @@ return function(Tab, UI, Window)
 
     Tab:CreateSection("Walk Fling")
 
+    -- Global movement flags shared across helpers
+    local noclipEnabled = false
+
     local walkFlingEnabled = false
     local walkFlingLoopRunning = false
     local walkFlingOriginalCollision = {}
@@ -191,6 +194,7 @@ return function(Tab, UI, Window)
 
     local slideEnabled = false
     local slideConn
+    local smartSprintEnabled = false
 
     local function stopSlide()
         slideEnabled = false
@@ -233,6 +237,12 @@ return function(Tab, UI, Window)
             end
             moveDir = Vector3.new(moveDir.X, 0, moveDir.Z).Unit
 
+            -- If smart sprint is enabled, only apply slide
+            -- when LeftShift is held.
+            if smartSprintEnabled and not UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
+                return
+            end
+
             local extraSpeed = strengthToSpeed(slideStrength)
             local extra = extraSpeed * dt
 
@@ -273,6 +283,17 @@ return function(Tab, UI, Window)
         end,
     })
 
+    Tab:CreateToggle({
+        Name = "Smart Sprint (Shift)",
+        Icon = "bolt",
+        IconSource = "Material",
+        Description = "Only applies slide speed boost while holding LeftShift.",
+        CurrentValue = false,
+        Callback = function(enabled)
+            smartSprintEnabled = enabled
+        end,
+    })
+
     local slideSlider = Tab:CreateSlider({
         Name = "Slide Strength (0–100)",
         Icon = "speed",
@@ -308,6 +329,8 @@ return function(Tab, UI, Window)
     local followBodyVelocity
     local followWanderOffset
     local followNextWanderTime = 0
+    local followOrbit = false
+    local followOrbitAngle = 0
 
     local function setCharacterCollide(character, collide)
         if not character then
@@ -382,7 +405,9 @@ return function(Tab, UI, Window)
 
         if followFlying then
             local myChar = LocalPlayer and LocalPlayer.Character
-            setCharacterCollide(myChar, true)
+            if not noclipEnabled then
+                setCharacterCollide(myChar, true)
+            end
             followFlying = false
         end
 
@@ -471,7 +496,9 @@ return function(Tab, UI, Window)
                 -- ground follow
                 if followFlying then
                     followFlying = false
-                    setCharacterCollide(myChar, true)
+                    if not noclipEnabled then
+                        setCharacterCollide(myChar, true)
+                    end
 
                     if followBodyVelocity then
                         pcall(function()
@@ -486,16 +513,25 @@ return function(Tab, UI, Window)
                         followWanderOffset = nil
                         myHum:MoveTo(targetRoot.Position)
                     else
-                        local now = tick()
-                        if not followWanderOffset or now >= followNextWanderTime then
-                            local radius = 4
-                            local angle = math.random() * math.pi * 2
-                            followWanderOffset = Vector3.new(math.cos(angle), 0, math.sin(angle)) * radius
-                            followNextWanderTime = now + math.random(2, 4)
-                        end
+                        local radius = 4
+                        if followOrbit then
+                            -- orbit in a small circle around the target
+                            followOrbitAngle = followOrbitAngle + (1.5 * dt)
+                            local offset = Vector3.new(math.cos(followOrbitAngle), 0, math.sin(followOrbitAngle)) * radius
+                            local orbitPos = targetRoot.Position + offset
+                            myHum:MoveTo(orbitPos)
+                        else
+                            -- random wander around the target
+                            local now = tick()
+                            if not followWanderOffset or now >= followNextWanderTime then
+                                local angle = math.random() * math.pi * 2
+                                followWanderOffset = Vector3.new(math.cos(angle), 0, math.sin(angle)) * radius
+                                followNextWanderTime = now + math.random(2, 4)
+                            end
 
-                        local wanderPos = targetRoot.Position + followWanderOffset
-                        myHum:MoveTo(wanderPos)
+                            local wanderPos = targetRoot.Position + followWanderOffset
+                            myHum:MoveTo(wanderPos)
+                        end
                     end
                 end
             end
@@ -570,6 +606,17 @@ return function(Tab, UI, Window)
     })
 
     Tab:CreateToggle({
+        Name = "Orbit Player",
+        Icon = "sync",
+        IconSource = "Material",
+        Description = "Circle around the follow target instead of standing still when close.",
+        CurrentValue = false,
+        Callback = function(enabled)
+            followOrbit = enabled
+        end,
+    })
+
+    Tab:CreateToggle({
         Name = "Enable Fly Follow",
         Icon = "flight",
         IconSource = "Material",
@@ -579,7 +626,9 @@ return function(Tab, UI, Window)
             followFlyEnabled = enabled
             if not enabled and followFlying then
                 local myChar = LocalPlayer and LocalPlayer.Character
-                setCharacterCollide(myChar, true)
+                if not noclipEnabled then
+                    setCharacterCollide(myChar, true)
+                end
                 followFlying = false
             end
         end,
@@ -598,6 +647,53 @@ return function(Tab, UI, Window)
     --------------------------------------------------------------------
 
     Tab:CreateSection("Extra Movement")
+
+    -- Standalone noclip
+    local noclipConn
+
+    local function setNoclip(state)
+        noclipEnabled = state
+
+        if noclipConn then
+            pcall(function()
+                noclipConn:Disconnect()
+            end)
+            noclipConn = nil
+        end
+
+        local character = LocalPlayer and LocalPlayer.Character
+
+        if not noclipEnabled then
+            -- only restore collisions if no other feature needs noclip
+            if character and not followFlying and not flyEnabled then
+                setCharacterCollide(character, true)
+            end
+            return
+        end
+
+        noclipConn = RunService.Heartbeat:Connect(function()
+            local ch = LocalPlayer and LocalPlayer.Character
+            if ch then
+                setCharacterCollide(ch, false)
+            end
+        end)
+    end
+
+    Tab:CreateToggle({
+        Name = "Noclip",
+        Icon = "grid_off",
+        IconSource = "Material",
+        Description = "Disables collisions for your character.",
+        CurrentValue = false,
+        Callback = function(enabled)
+            setNoclip(enabled)
+            UI:Notify({
+                Title = "Noclip",
+                Content = enabled and "Noclip enabled." or "Noclip disabled.",
+                Type = "info",
+            })
+        end,
+    })
 
     -- Infinite jump
     local infiniteJumpEnabled = false
@@ -679,7 +775,9 @@ return function(Tab, UI, Window)
         if humanoid then
             humanoid.PlatformStand = false
         end
-        setCharacterCollide(character, true)
+        if not noclipEnabled and not followFlying then
+            setCharacterCollide(character, true)
+        end
     end
 
     local function startFly()
@@ -793,6 +891,67 @@ return function(Tab, UI, Window)
                     Type = "info",
                 })
             end
+        end,
+    })
+
+    -- Anti-fall velocity clamp
+    local antiFallEnabled = false
+    local antiFallConn
+
+    local function setAntiFall(state)
+        antiFallEnabled = state
+
+        if antiFallConn then
+            pcall(function()
+                antiFallConn:Disconnect()
+            end)
+            antiFallConn = nil
+        end
+
+        if not antiFallEnabled then
+            return
+        end
+
+        antiFallConn = RunService.Heartbeat:Connect(function()
+            local character = LocalPlayer and LocalPlayer.Character
+            local root = getRootPart(character)
+            local humanoid = getHumanoid(character)
+            if not (root and humanoid) then
+                return
+            end
+
+            -- skip while in custom fly modes to avoid fighting with them
+            if flyEnabled or followFlying then
+                return
+            end
+
+            local vel = root.Velocity
+            if vel.Y < -80 then
+                local rayParams = RaycastParams.new()
+                rayParams.FilterType = Enum.RaycastFilterType.Exclude
+                rayParams.FilterDescendantsInstances = { character }
+
+                local result = Workspace:Raycast(root.Position, Vector3.new(0, -10, 0), rayParams)
+                if result and result.Instance and result.Instance.CanCollide ~= false then
+                    root.Velocity = Vector3.new(vel.X, -20, vel.Z)
+                end
+            end
+        end)
+    end
+
+    Tab:CreateToggle({
+        Name = "Anti-Fall Velocity Clamp",
+        Icon = "vertical_align_bottom",
+        IconSource = "Material",
+        Description = "Attempts to limit extreme falling speed by clamping vertical velocity near the ground.",
+        CurrentValue = false,
+        Callback = function(enabled)
+            setAntiFall(enabled)
+            UI:Notify({
+                Title = "Anti-Fall",
+                Content = enabled and "Anti-fall velocity clamp enabled." or "Anti-fall velocity clamp disabled.",
+                Type = "info",
+            })
         end,
     })
 end
