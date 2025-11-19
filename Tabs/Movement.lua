@@ -302,6 +302,21 @@ return function(Tab, UI, Window)
     local followTargetName = nil
     local followDropdown
     local followNearest = false
+    local followFlyEnabled = false
+    local followFlying = false
+
+    local function setCharacterCollide(character, collide)
+        if not character then
+            return
+        end
+        for _, part in ipairs(character:GetDescendants()) do
+            if part:IsA("BasePart") then
+                pcall(function()
+                    part.CanCollide = collide
+                end)
+            end
+        end
+    end
 
     local function listFollowOptions()
         local result = { "None" }
@@ -360,6 +375,12 @@ return function(Tab, UI, Window)
             end)
             followConn = nil
         end
+
+        if followFlying then
+            local myChar = LocalPlayer and LocalPlayer.Character
+            setCharacterCollide(myChar, true)
+            followFlying = false
+        end
     end
 
     local function startFollow()
@@ -385,7 +406,9 @@ return function(Tab, UI, Window)
             followConn = nil
         end
 
-        followConn = RunService.Heartbeat:Connect(function()
+        local flySpeed = 40
+
+        followConn = RunService.Heartbeat:Connect(function(dt)
             if not followEnabled then
                 return
             end
@@ -406,9 +429,37 @@ return function(Tab, UI, Window)
                 return
             end
 
-            local distance = (targetRoot.Position - myRoot.Position).Magnitude
-            if distance > 5 then
-                myHum:MoveTo(targetRoot.Position)
+            local delta = targetRoot.Position - myRoot.Position
+            local horizontalDelta = Vector3.new(delta.X, 0, delta.Z)
+            local distance = delta.Magnitude
+            local verticalDelta = delta.Y
+            local onGround = isOnGround(myHum)
+
+            if followFlyEnabled and (not onGround or math.abs(verticalDelta) > 6) then
+                -- fly mode
+                if not followFlying then
+                    followFlying = true
+                    setCharacterCollide(myChar, false)
+                end
+
+                if distance > 1 then
+                    local dir = delta.Unit
+                    local step = math.min(distance, flySpeed * dt)
+                    local newPos = myRoot.Position + dir * step
+
+                    local lookDir = horizontalDelta.Magnitude > 0 and horizontalDelta.Unit or Vector3.new(0, 0, -1)
+                    myRoot.CFrame = CFrame.new(newPos, newPos + lookDir)
+                end
+            else
+                -- ground follow
+                if followFlying then
+                    followFlying = false
+                    setCharacterCollide(myChar, true)
+                end
+
+                if distance > 5 and onGround then
+                    myHum:MoveTo(targetRoot.Position)
+                end
             end
         end)
     end
@@ -476,6 +527,22 @@ return function(Tab, UI, Window)
                     Content = "Now following the nearest player.",
                     Type = "info",
                 })
+            end
+        end,
+    })
+
+    Tab:CreateToggle({
+        Name = "Enable Fly Follow",
+        Icon = "flight",
+        IconSource = "Material",
+        Description = "When enabled, follow switches to a simple flying mode with noclip if the target is not reachable on foot (e.g. above you or while you are falling).",
+        CurrentValue = false,
+        Callback = function(enabled)
+            followFlyEnabled = enabled
+            if not enabled and followFlying then
+                local myChar = LocalPlayer and LocalPlayer.Character
+                setCharacterCollide(myChar, true)
+                followFlying = false
             end
         end,
     })
