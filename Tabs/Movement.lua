@@ -304,6 +304,7 @@ return function(Tab, UI, Window)
     local followNearest = false
     local followFlyEnabled = false
     local followFlying = false
+    local followBodyVelocity
 
     local function setCharacterCollide(character, collide)
         if not character then
@@ -381,6 +382,13 @@ return function(Tab, UI, Window)
             setCharacterCollide(myChar, true)
             followFlying = false
         end
+
+        if followBodyVelocity then
+            pcall(function()
+                followBodyVelocity:Destroy()
+            end)
+            followBodyVelocity = nil
+        end
     end
 
     local function startFollow()
@@ -406,7 +414,7 @@ return function(Tab, UI, Window)
             followConn = nil
         end
 
-        local flySpeed = 40
+        local flySpeed = 60
 
         followConn = RunService.Heartbeat:Connect(function(dt)
             if not followEnabled then
@@ -436,25 +444,45 @@ return function(Tab, UI, Window)
             local onGround = isOnGround(myHum)
 
             if followFlyEnabled and (not onGround or math.abs(verticalDelta) > 6) then
-                -- fly mode
+                -- fly mode (BodyVelocity-based)
                 if not followFlying then
                     followFlying = true
                     setCharacterCollide(myChar, false)
+
+                    if followBodyVelocity then
+                        pcall(function()
+                            followBodyVelocity:Destroy()
+                        end)
+                        followBodyVelocity = nil
+                    end
+
+                    followBodyVelocity = Instance.new("BodyVelocity")
+                    followBodyVelocity.MaxForce = Vector3.new(1e5, 1e5, 1e5)
+                    followBodyVelocity.Velocity = Vector3.new(0, 0, 0)
+                    followBodyVelocity.Parent = myRoot
                 end
 
                 if distance > 1 then
                     local dir = delta.Unit
-                    local step = math.min(distance, flySpeed * dt)
-                    local newPos = myRoot.Position + dir * step
+                    -- keep a consistent flying velocity towards the target
+                    followBodyVelocity.Velocity = dir * flySpeed
 
+                    -- keep character facing roughly towards the horizontal direction of travel
                     local lookDir = horizontalDelta.Magnitude > 0 and horizontalDelta.Unit or Vector3.new(0, 0, -1)
-                    myRoot.CFrame = CFrame.new(newPos, newPos + lookDir)
+                    myRoot.CFrame = CFrame.new(myRoot.Position, myRoot.Position + lookDir)
                 end
             else
                 -- ground follow
                 if followFlying then
                     followFlying = false
                     setCharacterCollide(myChar, true)
+
+                    if followBodyVelocity then
+                        pcall(function()
+                            followBodyVelocity:Destroy()
+                        end)
+                        followBodyVelocity = nil
+                    end
                 end
 
                 if distance > 5 and onGround then
