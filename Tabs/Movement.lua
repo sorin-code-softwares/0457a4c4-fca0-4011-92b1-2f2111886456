@@ -1,5 +1,5 @@
 -- Sorin Core Hub - Movement & Fling tab
--- Walk fling + slide-based movement speed (more subtle than pure WalkSpeed edits).
+-- Walk fling + slide-based movement speed (CFrame-based, less obvious than pure WalkSpeed edits).
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -8,6 +8,7 @@ local Workspace = game:GetService("Workspace")
 local LocalPlayer = Players.LocalPlayer
 
 local function getRootPart(character)
+    character = character or (LocalPlayer and LocalPlayer.Character)
     if not character then
         return nil
     end
@@ -17,7 +18,7 @@ local function getRootPart(character)
 end
 
 local function getHumanoid(character)
-    character = character or LocalPlayer.Character
+    character = character or (LocalPlayer and LocalPlayer.Character)
     return character and character:FindFirstChildOfClass("Humanoid")
 end
 
@@ -173,29 +174,22 @@ return function(Tab, UI, Window)
     })
 
     --------------------------------------------------------------------
-    -- Slide Speed (grounded, MoveDirection-based, speed-capped)
+    -- Slide Speed (grounded, CFrame-based)
     --------------------------------------------------------------------
 
     Tab:CreateSection("Slide Speed")
 
-    local UI_MIN, UI_MAX = 0.1, 1.0        -- what the user sees
-    local MUL_MIN, MUL_MAX = 0.8, 8.0      -- internal effective multiplier range
+    -- UI range 0..100 mapped to 10..90 studs/second extra speed.
+    local SLIDER_MIN, SLIDER_MAX = 0, 100
+    local slideStrength = 50
 
-    local function remap(x, a1, a2, b1, b2)
-        if a2 == a1 then
-            return b1
-        end
-        return b1 + ((x - a1) * (b2 - b1) / (a2 - a1))
+    local function strengthToSpeed(strength)
+        local t = math.clamp(strength or 0, SLIDER_MIN, SLIDER_MAX) / SLIDER_MAX
+        return 10 + t * 80
     end
 
     local slideEnabled = false
     local slideConn
-    local slideUiFactor = 1.0
-
-    local function getEffectiveMultiplier()
-        local t = math.clamp(slideUiFactor, UI_MIN, UI_MAX)
-        return math.clamp(remap(t, UI_MIN, UI_MAX, MUL_MIN, MUL_MAX), MUL_MIN, MUL_MAX)
-    end
 
     local function stopSlide()
         slideEnabled = false
@@ -238,22 +232,8 @@ return function(Tab, UI, Window)
             end
             moveDir = Vector3.new(moveDir.X, 0, moveDir.Z).Unit
 
-            local base = (humanoid.WalkSpeed and humanoid.WalkSpeed > 0) and humanoid.WalkSpeed or 16
-            local multiplier = getEffectiveMultiplier()
-            local target = base * multiplier
-
-            local vel = root.AssemblyLinearVelocity
-            local curHorz = Vector3.new(vel.X, 0, vel.Z).Magnitude
-            if curHorz >= target - 0.05 then
-                return
-            end
-
-            local deficit = target - curHorz
-            local maxExtra = math.clamp(target * 0.12 * dt, 0, 10.0 * dt)
-            local extra = math.clamp(deficit * 0.6 * dt, 0, maxExtra)
-            if extra <= 0 then
-                return
-            end
+            local extraSpeed = strengthToSpeed(slideStrength)
+            local extra = extraSpeed * dt
 
             rayParams.FilterDescendantsInstances = { character }
             local origin = root.Position
@@ -293,21 +273,22 @@ return function(Tab, UI, Window)
     })
 
     local slideSlider = Tab:CreateSlider({
-        Name = "Slide Multiplier (0.1–1.0)",
+        Name = "Slide Strength (0–100)",
         Icon = "speed",
         IconSource = "Material",
-        Min = UI_MIN,
-        Max = UI_MAX,
-        Step = 0.05,
-        Default = slideUiFactor,
-        Description = "Controls how strong the slide speed multiplier is. Low = subtle, high = aggressive.",
+        Min = SLIDER_MIN,
+        Max = SLIDER_MAX,
+        Step = 1,
+        Default = slideStrength,
+        Description = "Controls how strong the slide speed is. Higher values = faster sliding while grounded.",
         Callback = function(value)
             local num = tonumber(value)
             if num then
-                slideUiFactor = math.clamp(num, UI_MIN, UI_MAX)
+                slideStrength = math.clamp(num, SLIDER_MIN, SLIDER_MAX)
             end
         end,
     })
 
-    slideSlider:Set({ CurrentValue = slideUiFactor })
+    slideSlider:Set({ CurrentValue = slideStrength })
 end
+
