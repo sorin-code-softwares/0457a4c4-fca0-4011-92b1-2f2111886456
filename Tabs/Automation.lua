@@ -212,8 +212,8 @@ return function(Tab, UI, Window)
                 return
             end
 
-            -- ignore while custom-flying to avoid fighting with other features
-            if humanoid.PlatformStand then
+            -- only while normally running on the ground
+            if humanoid.PlatformStand or not isOnGround(humanoid) then
                 return
             end
 
