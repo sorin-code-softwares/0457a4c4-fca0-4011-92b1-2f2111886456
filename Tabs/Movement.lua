@@ -1079,5 +1079,3 @@ return function(Tab, UI, Window)
         end,
     })
 end
-
-print("[DEBUG-Movement] - Loaded v.0.1")
