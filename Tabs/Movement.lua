@@ -331,6 +331,7 @@ return function(Tab, UI, Window)
     local followNextWanderTime = 0
     local followOrbit = false
     local followOrbitAngle = 0
+    local followOrbitSpeed = 2.25
 
     local function setCharacterCollide(character, collide)
         if not character then
@@ -535,11 +536,22 @@ return function(Tab, UI, Window)
                         -- pick a small orbit/wander radius, but never larger than our current distance
                         local radius = math.clamp(distance, 3, 7)
                         if followOrbit then
-                            -- orbit in a small circle around the target
-                            followOrbitAngle = followOrbitAngle + (1.5 * dt)
+                            -- smooth continuous orbit instead of stop/go MoveTo loops
+                            followOrbitAngle = (followOrbitAngle + (followOrbitSpeed * dt)) % (math.pi * 2)
                             local offset = Vector3.new(math.cos(followOrbitAngle), 0, math.sin(followOrbitAngle)) * radius
                             local orbitPos = targetRoot.Position + offset
-                            myHum:MoveTo(orbitPos)
+                            local dir = orbitPos - myRoot.Position
+                            local dirMag = dir.Magnitude
+
+                            if dirMag > 0.3 then
+                                myHum:Move(dir.Unit, true)
+                            else
+                                myHum:Move(Vector3.new(), true)
+                            end
+
+                            if dirMag > radius * 1.35 then
+                                myHum:MoveTo(orbitPos)
+                            end
                         else
                             -- random wander around the target
                             local now = tick()
@@ -682,15 +694,21 @@ return function(Tab, UI, Window)
         rayParams.FilterType = Enum.RaycastFilterType.Exclude
         rayParams.FilterDescendantsInstances = { character }
 
-        local origin = root.Position
-        local result = Workspace:Raycast(origin, Vector3.new(0, -60, 0), rayParams)
+        local origin = root.Position + Vector3.new(0, 4, 0)
+        local result = Workspace:Raycast(origin, Vector3.new(0, -120, 0), rayParams)
         if result and result.Instance and result.Instance.CanCollide ~= false then
             local humanoid = getHumanoid(character)
-            local hipHeight = humanoid and humanoid.HipHeight or 2
+            local hipHeight = math.max((humanoid and humanoid.HipHeight) or 2, 1.5)
             local targetY = result.Position.Y + hipHeight
-            local newPos = Vector3.new(origin.X, targetY, origin.Z)
+            local newPos = Vector3.new(root.Position.X, targetY, root.Position.Z)
             local lookDir = root.CFrame.LookVector
+
+            local wasAnchored = root.Anchored
+            root.Anchored = true
+            root.AssemblyLinearVelocity = Vector3.new(0, -16, 0)
+            root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
             root.CFrame = CFrame.new(newPos, newPos + lookDir)
+            root.Anchored = wasAnchored
         end
     end
 
@@ -702,8 +720,10 @@ return function(Tab, UI, Window)
         if humanoid then
             humanoid.Sit = false
             humanoid.PlatformStand = false
+            humanoid.AutoRotate = true
             humanoid:ChangeState(Enum.HumanoidStateType.Freefall)
             humanoid:ChangeState(Enum.HumanoidStateType.Landed)
+            humanoid:Move(Vector3.new(), true)
         end
 
         if root then
