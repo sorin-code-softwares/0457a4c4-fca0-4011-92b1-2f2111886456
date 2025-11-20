@@ -403,14 +403,17 @@ return function(Tab, UI, Window)
             followConn = nil
         end
 
+        local myChar = LocalPlayer and LocalPlayer.Character
+        local myHum = getHumanoid(myChar)
+
+        -- always restore seating ability when follow stops
+        if myHum then
+            pcall(function()
+                myHum:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
+            end)
+        end
+
         if followFlying then
-            local myChar = LocalPlayer and LocalPlayer.Character
-            local myHum = getHumanoid(myChar)
-            if myHum then
-                pcall(function()
-                    myHum:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
-                end)
-            end
             if not noclipEnabled then
                 setCharacterCollide(myChar, true)
             end
