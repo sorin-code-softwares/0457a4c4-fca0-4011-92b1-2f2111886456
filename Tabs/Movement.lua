@@ -533,24 +533,23 @@ return function(Tab, UI, Window)
                         followWanderOffset = nil
                         myHum:MoveTo(targetRoot.Position)
                     else
-                        -- pick a small orbit/wander radius, but never larger than our current distance
-                        local radius = math.clamp(distance, 3, 7)
+                        -- pick a small orbit/wander radius with a minimum so we don't spin in place
+                        local radius = math.clamp(distance, 5, 10)
                         if followOrbit then
-                            -- smooth continuous orbit instead of stop/go MoveTo loops
+                            if radius < 5 then
+                                radius = 5
+                            end
+                            -- smooth continuous orbit
                             followOrbitAngle = (followOrbitAngle + (followOrbitSpeed * dt)) % (math.pi * 2)
                             local offset = Vector3.new(math.cos(followOrbitAngle), 0, math.sin(followOrbitAngle)) * radius
                             local orbitPos = targetRoot.Position + offset
                             local dir = orbitPos - myRoot.Position
                             local dirMag = dir.Magnitude
 
-                            if dirMag > 0.3 then
-                                myHum:Move(dir.Unit, true)
+                            if dirMag > 0.2 then
+                                myHum:MoveTo(orbitPos)
                             else
                                 myHum:Move(Vector3.new(), true)
-                            end
-
-                            if dirMag > radius * 1.35 then
-                                myHum:MoveTo(orbitPos)
                             end
                         else
                             -- random wander around the target
@@ -703,12 +702,10 @@ return function(Tab, UI, Window)
             local newPos = Vector3.new(root.Position.X, targetY, root.Position.Z)
             local lookDir = root.CFrame.LookVector
 
-            local wasAnchored = root.Anchored
-            root.Anchored = true
-            root.AssemblyLinearVelocity = Vector3.new(0, -16, 0)
+            root.Anchored = false
+            root.AssemblyLinearVelocity = Vector3.new(0, -18, 0)
             root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
             root.CFrame = CFrame.new(newPos, newPos + lookDir)
-            root.Anchored = wasAnchored
         end
     end
 
@@ -727,12 +724,21 @@ return function(Tab, UI, Window)
         end
 
         if root then
+            root.Anchored = false
             root.Velocity = Vector3.new(0, 0, 0)
             root.RotVelocity = Vector3.new(0, 0, 0)
             root.AssemblyLinearVelocity = Vector3.new(0, -6, 0)
         end
 
         snapCharacterToGround(character)
+
+        -- tiny wait to ensure physics tick applies collisions/gravity
+        task.delay(0, function()
+            local r = getRootPart(character)
+            if r then
+                r.AssemblyLinearVelocity = Vector3.new(0, -12, 0)
+            end
+        end)
     end
 
     local function setNoclip(state)
@@ -755,6 +761,14 @@ return function(Tab, UI, Window)
                 resetCharacterPhysics(character)
             end
             return
+        end
+
+        -- always unanchor when entering noclip to avoid staying stuck
+        if character then
+            local root = getRootPart(character)
+            if root then
+                root.Anchored = false
+            end
         end
 
         -- use Stepped so collisions are disabled before physics each frame
