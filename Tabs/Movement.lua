@@ -682,7 +682,6 @@ return function(Tab, UI, Window)
 
     -- Standalone noclip
     local noclipConn
-    local noclipCachedHipHeight
 
     -- No snap-to-ground: only reset physics state; avoids any vertical "pushing"
 
@@ -691,9 +690,6 @@ return function(Tab, UI, Window)
         local humanoid = getHumanoid(character)
         local root = getRootPart(character)
         if humanoid then
-            if noclipCachedHipHeight then
-                humanoid.HipHeight = noclipCachedHipHeight
-            end
             humanoid.Sit = false
             humanoid.PlatformStand = false
             humanoid.AutoRotate = true
@@ -723,13 +719,10 @@ return function(Tab, UI, Window)
         local character = LocalPlayer and LocalPlayer.Character
 
         if not noclipEnabled then
-            -- only restore collisions if no other feature needs noclip
+            -- do not touch physics; just restore collisions if we're not needed elsewhere
             if character and not followFlying and not flyEnabled then
                 setCharacterCollide(character, true)
-                -- re-sync physics when leaving noclip to avoid hovering
-                resetCharacterPhysics(character)
             end
-            noclipCachedHipHeight = nil
             return
         end
 
@@ -739,17 +732,19 @@ return function(Tab, UI, Window)
             if root then
                 root.Anchored = false
             end
-            local hum = getHumanoid(character)
-            if hum then
-                noclipCachedHipHeight = hum.HipHeight
-            end
         end
 
         -- use Stepped so collisions are disabled before physics each frame
         noclipConn = RunService.Stepped:Connect(function()
             local ch = LocalPlayer and LocalPlayer.Character
             if ch then
-                setCharacterCollide(ch, false)
+                for _, part in ipairs(ch:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        pcall(function()
+                            part.CanCollide = false
+                        end)
+                    end
+                end
             end
         end)
     end
