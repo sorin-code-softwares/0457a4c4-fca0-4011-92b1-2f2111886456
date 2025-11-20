@@ -1,5 +1,6 @@
 -- Sorin Core Hub - Movement & Fling tab
 -- Walk fling + slide-based movement speed (CFrame-based, less obvious than pure WalkSpeed edits).
+
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
@@ -1049,5 +1050,3 @@ return function(Tab, UI, Window)
         end,
     })
 end
-
-print("[DEBUG-Movement] - Loaded v.0.1")
