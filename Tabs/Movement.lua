@@ -1,11 +1,9 @@
 -- Sorin Core Hub - Movement & Fling tab
 -- Walk fling + slide-based movement speed (CFrame-based, less obvious than pure WalkSpeed edits).
-
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 local UserInputService = game:GetService("UserInputService")
-
 
 local LocalPlayer = Players.LocalPlayer
 
@@ -333,6 +331,7 @@ return function(Tab, UI, Window)
     local followOrbit = false
     local followOrbitAngle = 0
     local followOrbitSpeed = 2.25
+    local followEmoteFriendly = false
 
     local function setCharacterCollide(character, collide)
         if not character then
@@ -530,6 +529,22 @@ return function(Tab, UI, Window)
                 end
 
                 if onGround then
+                    if followEmoteFriendly then
+                        -- emote-friendly: avoid MoveTo to keep animations/emotes playing
+                        local desired = 6
+                        local slack = 2
+                        if distance > desired + slack then
+                            if horizontalDelta.Magnitude > 0 then
+                                myHum:Move(horizontalDelta.Unit, true)
+                            end
+                        elseif distance < desired - slack and horizontalDelta.Magnitude > 0 then
+                            myHum:Move(-horizontalDelta.Unit, true)
+                        else
+                            myHum:Move(Vector3.new(), true)
+                        end
+                        return
+                    end
+
                     if distance > 10 then
                         followWanderOffset = nil
                         myHum:MoveTo(targetRoot.Position)
@@ -542,7 +557,8 @@ return function(Tab, UI, Window)
                             end
                             -- smooth continuous orbit
                             followOrbitAngle = (followOrbitAngle + (followOrbitSpeed * dt)) % (math.pi * 2)
-                            local offset = Vector3.new(math.cos(followOrbitAngle), 0, math.sin(followOrbitAngle)) * radius
+                            local offset = Vector3.new(math.cos(followOrbitAngle), 0, math.sin(followOrbitAngle)) *
+                            radius
                             local orbitPos = targetRoot.Position + offset
                             local dir = orbitPos - myRoot.Position
                             local dirMag = dir.Magnitude
@@ -649,10 +665,22 @@ return function(Tab, UI, Window)
     })
 
     Tab:CreateToggle({
+        Name = "Emote-Friendly Follow",
+        Icon = "accessibility_new",
+        IconSource = "Material",
+        Description = "Use Move instead of MoveTo on ground to keep emotes/animations running.",
+        CurrentValue = false,
+        Callback = function(enabled)
+            followEmoteFriendly = enabled
+        end,
+    })
+
+    Tab:CreateToggle({
         Name = "Enable Fly Follow",
         Icon = "flight",
         IconSource = "Material",
-        Description = "When enabled, follow switches to a simple flying mode with noclip if the target is not reachable on foot.",
+        Description =
+        "When enabled, follow switches to a simple flying mode with noclip if the target is not reachable on foot.",
         CurrentValue = false,
         Callback = function(enabled)
             followFlyEnabled = enabled
@@ -694,8 +722,7 @@ return function(Tab, UI, Window)
             humanoid.Sit = false
             humanoid.PlatformStand = false
             humanoid.AutoRotate = true
-            humanoid:ChangeState(Enum.HumanoidStateType.Freefall)
-            humanoid:ChangeState(Enum.HumanoidStateType.Landed)
+            humanoid:ChangeState(Enum.HumanoidStateType.Running)
             humanoid:Move(Vector3.new(), true)
         end
 
@@ -723,6 +750,7 @@ return function(Tab, UI, Window)
             -- do not touch physics; just restore collisions if we're not needed elsewhere
             if character and not followFlying and not flyEnabled then
                 setCharacterCollide(character, true)
+                resetCharacterPhysics(character)
             end
             return
         end
@@ -1023,7 +1051,7 @@ return function(Tab, UI, Window)
             end
 
             local vy = root.AssemblyLinearVelocity.Y
-            if vy < -40 then -- MinFallSpeed
+            if vy < -40 then    -- MinFallSpeed
                 local cap = -65 -- CapDownSpeed
                 local newVy = math.max(vy, cap)
                 if newVy ~= vy then
@@ -1051,3 +1079,5 @@ return function(Tab, UI, Window)
         end,
     })
 end
+
+print("[DEBUG-Movement] - Loaded v.0.1")
