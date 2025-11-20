@@ -332,6 +332,11 @@ return function(Tab, UI, Window)
     local followOrbitAngle = 0
     local followOrbitSpeed = 2.25
     local followEmoteFriendly = false
+    local emoteLockEnabled = false
+    local emoteLockConn
+    local emoteLockTrack
+    local emoteLockSpeed = 12
+    local emoteLockAnimId = ""
 
     local function setCharacterCollide(character, collide)
         if not character then
@@ -531,13 +536,18 @@ return function(Tab, UI, Window)
                 if onGround then
                     if followEmoteFriendly then
                         -- emote-friendly: avoid MoveTo to keep animations/emotes playing
-                        local desired = 6
-                        local slack = 2
+                        local desired = 8
+                        local slack = 3
+                        local horizMag = horizontalDelta.Magnitude
+
                         if distance > desired + slack then
-                            if horizontalDelta.Magnitude > 0 then
+                            if horizMag > 0.05 then
                                 myHum:Move(horizontalDelta.Unit, true)
+                            else
+                                -- if we have no clear dir, small MoveTo nudge
+                                myHum:MoveTo(targetRoot.Position)
                             end
-                        elseif distance < desired - slack and horizontalDelta.Magnitude > 0 then
+                        elseif distance < desired - slack and horizMag > 0.05 then
                             myHum:Move(-horizontalDelta.Unit, true)
                         else
                             myHum:Move(Vector3.new(), true)
@@ -694,6 +704,199 @@ return function(Tab, UI, Window)
             end
         end,
     })
+
+    --------------------------------------------------------------------
+    -- Emote Lock (keep emote playing while moving with assisted motion)
+    --------------------------------------------------------------------
+
+    local function getAnimator(humanoid)
+        if not humanoid then
+            return nil
+        end
+        return humanoid:FindFirstChildOfClass("Animator")
+            or humanoid:WaitForChild("Animator", 1)
+    end
+
+    local function stopEmoteLock()
+        emoteLockEnabled = false
+        if emoteLockConn then
+            pcall(function()
+                emoteLockConn:Disconnect()
+            end)
+            emoteLockConn = nil
+        end
+        if emoteLockTrack then
+            pcall(function()
+                emoteLockTrack:Stop(0.15)
+                emoteLockTrack:Destroy()
+            end)
+            emoteLockTrack = nil
+        end
+    end
+
+    local function startEmoteLock()
+        stopEmoteLock()
+
+        local character = LocalPlayer and LocalPlayer.Character
+        local humanoid = getHumanoid(character)
+        local root = getRootPart(character)
+        if not (character and humanoid and root) then
+            UI:Notify({
+                Title = "Emote Lock",
+                Content = "Character or humanoid not ready.",
+                Type = "warning",
+            })
+            return
+        end
+
+        local animator = getAnimator(humanoid)
+        if not animator then
+            UI:Notify({
+                Title = "Emote Lock",
+                Content = "Animator not available.",
+                Type = "warning",
+            })
+            return
+        end
+
+        -- Try to get track from provided ID, else reuse currently playing track
+        local track
+        if emoteLockAnimId and tostring(emoteLockAnimId) ~= "" then
+            local anim = Instance.new("Animation")
+            anim.AnimationId = "rbxassetid://" .. tostring(emoteLockAnimId)
+            local ok, loaded = pcall(function()
+                return animator:LoadAnimation(anim)
+            end)
+            if ok and loaded then
+                track = loaded
+                track.Looped = true
+            end
+        end
+
+        if not track then
+            local playing = humanoid:GetPlayingAnimationTracks()
+            track = playing[1]
+            if track then
+                track.Looped = true
+            end
+        end
+
+        if not track then
+            UI:Notify({
+                Title = "Emote Lock",
+                Content = "No emote track found or loaded.",
+                Type = "warning",
+            })
+            return
+        end
+
+        emoteLockTrack = track
+        emoteLockTrack:Play(0.1, 1, 1)
+        emoteLockEnabled = true
+
+        emoteLockConn = RunService.RenderStepped:Connect(function(dt)
+            if not emoteLockEnabled then
+                return
+            end
+
+            local character = LocalPlayer and LocalPlayer.Character
+            local humanoid = getHumanoid(character)
+            local root = getRootPart(character)
+            local camera = Workspace.CurrentCamera
+            if not (humanoid and root and camera and emoteLockTrack and emoteLockTrack.IsPlaying) then
+                stopEmoteLock()
+                return
+            end
+
+            -- keep default movement idle so emote isn't overridden
+            humanoid:Move(Vector3.new(), true)
+
+            local moveDir = Vector3.new(0, 0, 0)
+            local camCF = camera.CFrame
+            if UserInputService:IsKeyDown(Enum.KeyCode.W) then
+                moveDir += camCF.LookVector
+            end
+            if UserInputService:IsKeyDown(Enum.KeyCode.S) then
+                moveDir -= camCF.LookVector
+            end
+            if UserInputService:IsKeyDown(Enum.KeyCode.A) then
+                moveDir -= camCF.RightVector
+            end
+            if UserInputService:IsKeyDown(Enum.KeyCode.D) then
+                moveDir += camCF.RightVector
+            end
+
+            moveDir = Vector3.new(moveDir.X, 0, moveDir.Z)
+            local mag = moveDir.Magnitude
+            if mag > 0.01 then
+                moveDir = moveDir.Unit
+                local step = emoteLockSpeed * dt
+                local targetPos = root.Position + (moveDir * step)
+                root.CFrame = CFrame.new(targetPos, targetPos + camCF.LookVector)
+            end
+        end)
+    end
+
+    Tab:CreateSection("Emote Lock")
+
+    Tab:CreateTextbox({
+        Name = "Emote Animation Id",
+        Icon = "tag",
+        IconSource = "Material",
+        PlaceholderText = "rbxassetid (optional)",
+        Description = "Id of the emote animation to lock. Leave blank to reuse current playing emote.",
+        Callback = function(text)
+            emoteLockAnimId = text or ""
+        end,
+    })
+
+    local emoteSpeedSlider = Tab:CreateSlider({
+        Name = "Emote Move Speed",
+        Icon = "speed",
+        IconSource = "Material",
+        Min = 4,
+        Max = 30,
+        Step = 1,
+        Default = emoteLockSpeed,
+        Description = "Speed while moving with emote lock.",
+        Callback = function(value)
+            local num = tonumber(value)
+            if num then
+                emoteLockSpeed = math.clamp(num, 4, 30)
+            end
+        end,
+    })
+    emoteSpeedSlider:Set({ CurrentValue = emoteLockSpeed })
+
+    Tab:CreateToggle({
+        Name = "Enable Emote Lock",
+        Icon = "emoji_emotions",
+        IconSource = "Material",
+        Description = "Keeps emote playing while you move (uses CFrame sliding).",
+        CurrentValue = false,
+        Callback = function(enabled)
+            if enabled then
+                startEmoteLock()
+                if emoteLockEnabled then
+                    UI:Notify({
+                        Title = "Emote Lock",
+                        Content = "Emote lock enabled.",
+                        Type = "info",
+                    })
+                end
+            else
+                stopEmoteLock()
+                UI:Notify({
+                    Title = "Emote Lock",
+                    Content = "Emote lock disabled.",
+                    Type = "info",
+                })
+            end
+        end,
+    })
+
+    -- stop emote lock if character respawns
+    LocalPlayer.CharacterAdded:Connect(stopEmoteLock)
 
     Players.PlayerAdded:Connect(refreshFollowOptions)
     Players.PlayerRemoving:Connect(function(plr)
