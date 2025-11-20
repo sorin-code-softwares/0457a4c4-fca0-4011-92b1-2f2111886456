@@ -416,6 +416,7 @@ return function(Tab, UI, Window)
         if followFlying then
             if not noclipEnabled then
                 setCharacterCollide(myChar, true)
+                resetCharacterPhysics(myChar)
             end
             followFlying = false
         end
@@ -515,6 +516,7 @@ return function(Tab, UI, Window)
                     followFlying = false
                     if not noclipEnabled then
                         setCharacterCollide(myChar, true)
+                        resetCharacterPhysics(myChar)
                     end
 
                     if followBodyVelocity then
@@ -646,6 +648,7 @@ return function(Tab, UI, Window)
                 local myChar = LocalPlayer and LocalPlayer.Character
                 if not noclipEnabled then
                     setCharacterCollide(myChar, true)
+                    resetCharacterPhysics(myChar)
                 end
                 followFlying = false
             end
@@ -691,6 +694,24 @@ return function(Tab, UI, Window)
         end
     end
 
+    local function resetCharacterPhysics(character)
+        character = character or (LocalPlayer and LocalPlayer.Character)
+        local humanoid = getHumanoid(character)
+        local root = getRootPart(character)
+
+        if humanoid then
+            humanoid.PlatformStand = false
+            humanoid:ChangeState(Enum.HumanoidStateType.Landed)
+        end
+
+        if root then
+            root.Velocity = Vector3.new(0, 0, 0)
+            root.RotVelocity = Vector3.new(0, 0, 0)
+        end
+
+        snapCharacterToGround(character)
+    end
+
     local function setNoclip(state)
         noclipEnabled = state
 
@@ -707,16 +728,8 @@ return function(Tab, UI, Window)
             -- only restore collisions if no other feature needs noclip
             if character and not followFlying and not flyEnabled then
                 setCharacterCollide(character, true)
-
-                -- nudge humanoid back into a grounded state so you don't
-                -- keep hovering slightly above the floor
-                local humanoid = getHumanoid(character)
-                if humanoid then
-                    humanoid:ChangeState(Enum.HumanoidStateType.Landed)
-                end
-
-                 -- snap root back down to the nearest floor below
-                 snapCharacterToGround(character)
+                -- re-sync physics when leaving noclip to avoid hovering
+                resetCharacterPhysics(character)
             end
             return
         end
