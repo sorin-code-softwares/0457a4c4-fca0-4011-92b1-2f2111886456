@@ -336,7 +336,6 @@ return function(Tab, UI, Window)
     local emoteLockConn
     local emoteLockTrack
     local emoteLockSpeed = 12
-    local emoteLockAnimId = ""
 
     local function setCharacterCollide(character, collide)
         if not character then
@@ -759,26 +758,12 @@ return function(Tab, UI, Window)
             return
         end
 
-        -- Try to get track from provided ID, else reuse currently playing track
+        -- Try to reuse currently playing track; if none, abort
         local track
-        if emoteLockAnimId and tostring(emoteLockAnimId) ~= "" then
-            local anim = Instance.new("Animation")
-            anim.AnimationId = "rbxassetid://" .. tostring(emoteLockAnimId)
-            local ok, loaded = pcall(function()
-                return animator:LoadAnimation(anim)
-            end)
-            if ok and loaded then
-                track = loaded
-                track.Looped = true
-            end
-        end
-
-        if not track then
-            local playing = humanoid:GetPlayingAnimationTracks()
-            track = playing[1]
-            if track then
-                track.Looped = true
-            end
+        local playing = humanoid:GetPlayingAnimationTracks()
+        track = playing[1]
+        if track then
+            track.Looped = true
         end
 
         if not track then
@@ -838,17 +823,6 @@ return function(Tab, UI, Window)
     end
 
     Tab:CreateSection("Emote Lock")
-
-    Tab:CreateTextbox({
-        Name = "Emote Animation Id",
-        Icon = "tag",
-        IconSource = "Material",
-        PlaceholderText = "rbxassetid (optional)",
-        Description = "Id of the emote animation to lock. Leave blank to reuse current playing emote.",
-        Callback = function(text)
-            emoteLockAnimId = text or ""
-        end,
-    })
 
     local emoteSpeedSlider = Tab:CreateSlider({
         Name = "Emote Move Speed",
