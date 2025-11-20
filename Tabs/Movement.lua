@@ -1051,5 +1051,3 @@ return function(Tab, UI, Window)
         end,
     })
 end
-
-
