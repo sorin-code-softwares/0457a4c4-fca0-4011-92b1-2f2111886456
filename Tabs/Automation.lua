@@ -96,6 +96,7 @@ return function(Tab, UI, Window)
     local autoRespawnEnabled = false
     local autoRespawnCharConn
     local autoRespawnDiedConn
+    local autoRespawnMonitorConn
 
     local function disconnectAutoRespawn()
         if autoRespawnCharConn then
@@ -110,6 +111,21 @@ return function(Tab, UI, Window)
             end)
             autoRespawnDiedConn = nil
         end
+        if autoRespawnMonitorConn then
+            pcall(function()
+                autoRespawnMonitorConn:Disconnect()
+            end)
+            autoRespawnMonitorConn = nil
+        end
+    end
+
+    local function triggerRespawn()
+        if not LocalPlayer then
+            return
+        end
+        pcall(function()
+            LocalPlayer:LoadCharacter()
+        end)
     end
 
     local function bindHumanoidForRespawn(character)
@@ -134,11 +150,9 @@ return function(Tab, UI, Window)
                 return
             end
 
-            task.delay(1, function()
+            task.delay(0.75, function()
                 if autoRespawnEnabled and LocalPlayer and LocalPlayer.Character == character then
-                    pcall(function()
-                        LocalPlayer:LoadCharacter()
-                    end)
+                    triggerRespawn()
                 end
             end)
         end)
@@ -147,6 +161,7 @@ return function(Tab, UI, Window)
     local function setAutoRespawn(state)
         autoRespawnEnabled = state
         disconnectAutoRespawn()
+        game:GetService("Players").CharacterAutoLoads = true
 
         local lp = LocalPlayer
         if not autoRespawnEnabled or not lp then
@@ -159,6 +174,17 @@ return function(Tab, UI, Window)
 
         autoRespawnCharConn = lp.CharacterAdded:Connect(function(char)
             bindHumanoidForRespawn(char)
+        end)
+
+        autoRespawnMonitorConn = RunService.Heartbeat:Connect(function()
+            if not autoRespawnEnabled then
+                return
+            end
+            local char = lp.Character
+            local hum = getHumanoid(char)
+            if not hum or hum.Health <= 0 then
+                triggerRespawn()
+            end
         end)
     end
 
@@ -210,46 +236,56 @@ return function(Tab, UI, Window)
             end
 
             -- only while normally running on the ground
-            if humanoid.PlatformStand or not isOnGround(humanoid) then
+            if humanoid.PlatformStand or humanoid.Sit or not isOnGround(humanoid) then
                 return
             end
 
             local moveDir = humanoid.MoveDirection
-            if moveDir.Magnitude <= 0.01 then
+            local horizVel = Vector3.new(root.AssemblyLinearVelocity.X, 0, root.AssemblyLinearVelocity.Z)
+            if horizVel.Magnitude > 2 and moveDir.Magnitude < 0.05 then
+                moveDir = horizVel.Unit
+            end
+            if moveDir.Magnitude <= 0.05 then
                 return
             end
             moveDir = Vector3.new(moveDir.X, 0, moveDir.Z).Unit
 
-            -- probe a bit in front of the player at two distances;
-            -- if any of them has no ground underneath, kill horizontal speed.
             local rayParams = RaycastParams.new()
             rayParams.FilterType = Enum.RaycastFilterType.Exclude
             rayParams.FilterDescendantsInstances = { character }
 
-            local origin = root.Position
-            local distances = { 3, 6 }
+            local origin = root.Position + Vector3.new(0, 2.5, 0)
+            local distances = { 3, 6, 9 }
+            local lateral = Vector3.new(-moveDir.Z, 0, moveDir.X) -- perpendicular sideways
+            local offsets = { 0, 2, -2 }
             local unsafe = false
 
             for _, dist in ipairs(distances) do
-                local ahead = origin + moveDir * dist
-                local result = Workspace:Raycast(ahead + Vector3.new(0, 3, 0), Vector3.new(0, -20, 0), rayParams)
-                if not result then
-                    unsafe = true
-                    break
-                else
-                    local drop = origin.Y - result.Position.Y
-                    if drop > 8 then
+                for _, side in ipairs(offsets) do
+                    local lateralOffset = lateral * side
+                    local ahead = origin + moveDir * dist + lateralOffset
+                    local result = Workspace:Raycast(ahead, Vector3.new(0, -40, 0), rayParams)
+                    if not result then
                         unsafe = true
                         break
+                    else
+                        local drop = origin.Y - result.Position.Y
+                        if drop > 6 then
+                            unsafe = true
+                            break
+                        end
                     end
+                end
+                if unsafe then
+                    break
                 end
             end
 
             if unsafe then
                 local v = root.AssemblyLinearVelocity
-                if v.Y <= 0 then
-                    root.AssemblyLinearVelocity = Vector3.new(0, v.Y, 0)
-                end
+                root.AssemblyLinearVelocity = Vector3.new(v.X * 0.1, math.min(v.Y, 0), v.Z * 0.1)
+                root.CFrame = root.CFrame - (moveDir * 0.6)
+                humanoid:Move(Vector3.new(), true)
             end
         end)
     end
