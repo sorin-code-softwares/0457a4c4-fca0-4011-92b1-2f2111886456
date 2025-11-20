@@ -682,39 +682,18 @@ return function(Tab, UI, Window)
 
     -- Standalone noclip
     local noclipConn
+    local noclipCachedHipHeight
 
-    local function snapCharacterToGround(character)
-        local root = getRootPart(character)
-        if not root then
-            return
-        end
-
-        local rayParams = RaycastParams.new()
-        rayParams.FilterType = Enum.RaycastFilterType.Exclude
-        rayParams.FilterDescendantsInstances = { character }
-
-        local origin = root.Position + Vector3.new(0, 4, 0)
-        local result = Workspace:Raycast(origin, Vector3.new(0, -120, 0), rayParams)
-        if result and result.Instance and result.Instance.CanCollide ~= false then
-            local humanoid = getHumanoid(character)
-            local hipHeight = math.max((humanoid and humanoid.HipHeight) or 2, 1.5)
-            local targetY = result.Position.Y + hipHeight
-            local newPos = Vector3.new(root.Position.X, targetY, root.Position.Z)
-            local lookDir = root.CFrame.LookVector
-
-            root.Anchored = false
-            root.AssemblyLinearVelocity = Vector3.new(0, -18, 0)
-            root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
-            root.CFrame = CFrame.new(newPos, newPos + lookDir)
-        end
-    end
+    -- No snap-to-ground: only reset physics state; avoids any vertical "pushing"
 
     local function resetCharacterPhysics(character)
         character = character or (LocalPlayer and LocalPlayer.Character)
         local humanoid = getHumanoid(character)
         local root = getRootPart(character)
-
         if humanoid then
+            if noclipCachedHipHeight then
+                humanoid.HipHeight = noclipCachedHipHeight
+            end
             humanoid.Sit = false
             humanoid.PlatformStand = false
             humanoid.AutoRotate = true
@@ -727,18 +706,8 @@ return function(Tab, UI, Window)
             root.Anchored = false
             root.Velocity = Vector3.new(0, 0, 0)
             root.RotVelocity = Vector3.new(0, 0, 0)
-            root.AssemblyLinearVelocity = Vector3.new(0, -6, 0)
+            root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
         end
-
-        snapCharacterToGround(character)
-
-        -- tiny wait to ensure physics tick applies collisions/gravity
-        task.delay(0, function()
-            local r = getRootPart(character)
-            if r then
-                r.AssemblyLinearVelocity = Vector3.new(0, -12, 0)
-            end
-        end)
     end
 
     local function setNoclip(state)
@@ -760,6 +729,7 @@ return function(Tab, UI, Window)
                 -- re-sync physics when leaving noclip to avoid hovering
                 resetCharacterPhysics(character)
             end
+            noclipCachedHipHeight = nil
             return
         end
 
@@ -768,6 +738,10 @@ return function(Tab, UI, Window)
             local root = getRootPart(character)
             if root then
                 root.Anchored = false
+            end
+            local hum = getHumanoid(character)
+            if hum then
+                noclipCachedHipHeight = hum.HipHeight
             end
         end
 
