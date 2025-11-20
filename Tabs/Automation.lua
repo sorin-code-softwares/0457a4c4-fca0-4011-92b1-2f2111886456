@@ -242,10 +242,10 @@ return function(Tab, UI, Window)
 
             local moveDir = humanoid.MoveDirection
             local horizVel = Vector3.new(root.AssemblyLinearVelocity.X, 0, root.AssemblyLinearVelocity.Z)
-            if horizVel.Magnitude > 2 and moveDir.Magnitude < 0.05 then
+            if horizVel.Magnitude > 5 and moveDir.Magnitude < 0.1 then
                 moveDir = horizVel.Unit
             end
-            if moveDir.Magnitude <= 0.05 then
+            if moveDir.Magnitude <= 0.1 then
                 return
             end
             moveDir = Vector3.new(moveDir.X, 0, moveDir.Z).Unit
@@ -255,22 +255,22 @@ return function(Tab, UI, Window)
             rayParams.FilterDescendantsInstances = { character }
 
             local origin = root.Position + Vector3.new(0, 2.5, 0)
-            local distances = { 3, 6, 9 }
+            local distances = { 4, 7, 10 }
             local lateral = Vector3.new(-moveDir.Z, 0, moveDir.X) -- perpendicular sideways
-            local offsets = { 0, 2, -2 }
+            local offsets = { 0, 2.5, -2.5 }
             local unsafe = false
 
             for _, dist in ipairs(distances) do
                 for _, side in ipairs(offsets) do
                     local lateralOffset = lateral * side
                     local ahead = origin + moveDir * dist + lateralOffset
-                    local result = Workspace:Raycast(ahead, Vector3.new(0, -40, 0), rayParams)
+                    local result = Workspace:Raycast(ahead, Vector3.new(0, -45, 0), rayParams)
                     if not result then
                         unsafe = true
                         break
                     else
                         local drop = origin.Y - result.Position.Y
-                        if drop > 6 then
+                        if drop > 12 then
                             unsafe = true
                             break
                         end
@@ -283,8 +283,8 @@ return function(Tab, UI, Window)
 
             if unsafe then
                 local v = root.AssemblyLinearVelocity
-                root.AssemblyLinearVelocity = Vector3.new(v.X * 0.1, math.min(v.Y, 0), v.Z * 0.1)
-                root.CFrame = root.CFrame - (moveDir * 0.6)
+                root.AssemblyLinearVelocity = Vector3.new(v.X * 0.4, math.min(v.Y, 0), v.Z * 0.4)
+                root.CFrame = root.CFrame - (moveDir * 0.4)
                 humanoid:Move(Vector3.new(), true)
             end
         end)
