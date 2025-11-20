@@ -683,7 +683,7 @@ return function(Tab, UI, Window)
         rayParams.FilterDescendantsInstances = { character }
 
         local origin = root.Position
-        local result = Workspace:Raycast(origin, Vector3.new(0, -20, 0), rayParams)
+        local result = Workspace:Raycast(origin, Vector3.new(0, -60, 0), rayParams)
         if result and result.Instance and result.Instance.CanCollide ~= false then
             local humanoid = getHumanoid(character)
             local hipHeight = humanoid and humanoid.HipHeight or 2
@@ -700,13 +700,16 @@ return function(Tab, UI, Window)
         local root = getRootPart(character)
 
         if humanoid then
+            humanoid.Sit = false
             humanoid.PlatformStand = false
+            humanoid:ChangeState(Enum.HumanoidStateType.Freefall)
             humanoid:ChangeState(Enum.HumanoidStateType.Landed)
         end
 
         if root then
             root.Velocity = Vector3.new(0, 0, 0)
             root.RotVelocity = Vector3.new(0, 0, 0)
+            root.AssemblyLinearVelocity = Vector3.new(0, -6, 0)
         end
 
         snapCharacterToGround(character)
@@ -841,6 +844,7 @@ return function(Tab, UI, Window)
         end
         if not noclipEnabled and not followFlying then
             setCharacterCollide(character, true)
+            resetCharacterPhysics(character)
         end
     end
 
