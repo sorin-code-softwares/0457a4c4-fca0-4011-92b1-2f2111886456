@@ -6,6 +6,7 @@ local Workspace = game:GetService("Workspace")
 local UserInputService = game:GetService("UserInputService")
 
 local LocalPlayer = Players.LocalPlayer
+local resetCharacterPhysics -- forward declare so follow helpers can reference it safely
 
 local function getRootPart(character)
     character = character or (LocalPlayer and LocalPlayer.Character)
@@ -332,6 +333,8 @@ return function(Tab, UI, Window)
     local followOrbitAngle = 0
     local followOrbitSpeed = 2.25
     local followEmoteFriendly = false
+    local followAirTime = 0
+    local followGroundTime = 0
     local emoteLockEnabled = false
     local emoteLockConn
     local emoteLockTrack
@@ -506,8 +509,20 @@ return function(Tab, UI, Window)
             local distance = delta.Magnitude
             local verticalDelta = delta.Y
             local onGround = isOnGround(myHum)
+            if onGround then
+                followAirTime = 0
+                followGroundTime = followGroundTime + dt
+            else
+                followAirTime = followAirTime + dt
+                followGroundTime = 0
+            end
 
-            if followFlyEnabled and (not onGround or math.abs(verticalDelta) > 6) then
+            -- only flip into fly if we have been airborne briefly or the vertical gap is large
+            local shouldFly = followFlyEnabled
+                and ((not onGround and followAirTime > 0.12)
+                    or math.abs(verticalDelta) > 8)
+
+            if shouldFly then
                 -- fly mode (BodyVelocity-based)
                 if not followFlying then
                     followFlying = true
@@ -528,33 +543,27 @@ return function(Tab, UI, Window)
                 -- in case another feature temporarily re-enabled collisions
                 setCharacterCollide(myChar, false)
 
-                if distance > 1 then
-                    local dir = delta.Unit
-                    -- keep a consistent flying velocity towards the target
-                    followBodyVelocity.Velocity = dir * flySpeed
+                local dir = distance > 0.35 and delta.Unit or Vector3.new(0, 0, 0)
+                -- Smooth velocity: scale with distance (PD-lite) and clamp to flySpeed
+                local targetSpeed = math.clamp(distance * 8, 0, flySpeed)
+                followBodyVelocity.Velocity = dir * targetSpeed
 
-                    -- keep character facing roughly towards the horizontal direction of travel
-                    local lookDir = horizontalDelta.Magnitude > 0 and horizontalDelta.Unit or Vector3.new(0, 0, -1)
-                    myRoot.CFrame = CFrame.new(myRoot.Position, myRoot.Position + lookDir)
-                end
+                -- keep character facing roughly towards the horizontal direction of travel
+                local lookDir = horizontalDelta.Magnitude > 0 and horizontalDelta.Unit or Vector3.new(0, 0, -1)
+                myRoot.CFrame = CFrame.new(myRoot.Position, myRoot.Position + lookDir)
             else
                 -- ground follow
                 if followFlying then
-                    followFlying = false
-                    if not noclipEnabled then
-                        setCharacterCollide(myChar, true)
-                        resetCharacterPhysics(myChar)
-                    end
-
-                    if followBodyVelocity then
-                        pcall(function()
-                            followBodyVelocity:Destroy()
-                        end)
-                        followBodyVelocity = nil
-                    end
+                    cleanupFollowFly(myChar, true)
                 end
 
                 if onGround then
+                    -- tiny cooldown on landing to avoid instant re-toggle into fly
+                    if followGroundTime < 0.08 then
+                        myHum:Move(Vector3.new(), true)
+                        return
+                    end
+
                     if followEmoteFriendly then
                         -- emote-friendly: avoid MoveTo to keep animations/emotes playing
                         local desired = 8
@@ -726,6 +735,14 @@ return function(Tab, UI, Window)
     -- Emote Lock (keep emote playing while moving with assisted motion)
     --------------------------------------------------------------------
 
+    local function pickEmoteTrack(humanoid)
+        if not humanoid then
+            return nil
+        end
+        local tracks = humanoid:GetPlayingAnimationTracks()
+        return tracks[1]
+    end
+
     local function getAnimator(humanoid)
         if not humanoid then
             return nil
@@ -752,49 +769,21 @@ return function(Tab, UI, Window)
     end
 
     local function startEmoteLock()
-        stopEmoteLock()
-
-        local character = LocalPlayer and LocalPlayer.Character
-        local humanoid = getHumanoid(character)
-        local root = getRootPart(character)
-        if not (character and humanoid and root) then
-            UI:Notify({
-                Title = "Emote Lock",
-                Content = "Character or humanoid not ready.",
-                Type = "warning",
-            })
-            return
+        -- clear previous state but keep the toggle logically on
+        if emoteLockConn then
+            pcall(function()
+                emoteLockConn:Disconnect()
+            end)
+            emoteLockConn = nil
+        end
+        if emoteLockTrack then
+            pcall(function()
+                emoteLockTrack:Stop(0.1)
+                emoteLockTrack:Destroy()
+            end)
+            emoteLockTrack = nil
         end
 
-        local animator = getAnimator(humanoid)
-        if not animator then
-            UI:Notify({
-                Title = "Emote Lock",
-                Content = "Animator not available.",
-                Type = "warning",
-            })
-            return
-        end
-
-        -- Try to reuse currently playing track; if none, abort
-        local track
-        local playing = humanoid:GetPlayingAnimationTracks()
-        track = playing[1]
-        if track then
-            track.Looped = true
-        end
-
-        if not track then
-            UI:Notify({
-                Title = "Emote Lock",
-                Content = "No emote track found or loaded.",
-                Type = "warning",
-            })
-            return
-        end
-
-        emoteLockTrack = track
-        emoteLockTrack:Play(0.1, 1, 1)
         emoteLockEnabled = true
 
         emoteLockConn = RunService.RenderStepped:Connect(function(dt)
@@ -806,8 +795,24 @@ return function(Tab, UI, Window)
             local humanoid = getHumanoid(character)
             local root = getRootPart(character)
             local camera = Workspace.CurrentCamera
-            if not (humanoid and root and camera and emoteLockTrack and emoteLockTrack.IsPlaying) then
-                stopEmoteLock()
+            if not (humanoid and root and camera) then
+                return
+            end
+
+            -- find or refresh the emote track; if none is playing yet, just idle but stay enabled
+            if (not emoteLockTrack) or (not emoteLockTrack.IsPlaying) then
+                local animator = getAnimator(humanoid)
+                if animator then
+                    emoteLockTrack = pickEmoteTrack(humanoid)
+                    if emoteLockTrack then
+                        emoteLockTrack.Looped = true
+                        emoteLockTrack:Play(0.1, 1, 1)
+                    end
+                end
+            end
+
+            if not emoteLockTrack or not emoteLockTrack.IsPlaying then
+                humanoid:Move(Vector3.new(), true)
                 return
             end
 
@@ -909,7 +914,7 @@ return function(Tab, UI, Window)
 
     -- No snap-to-ground: only reset physics state; avoids any vertical "pushing"
 
-    local function resetCharacterPhysics(character)
+    resetCharacterPhysics = function(character)
         character = character or (LocalPlayer and LocalPlayer.Character)
         local humanoid = getHumanoid(character)
         local root = getRootPart(character)
