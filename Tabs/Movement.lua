@@ -399,6 +399,32 @@ return function(Tab, UI, Window)
         return nil
     end
 
+    -- Always tear down fly assist (BodyVelocity/noclip) and clear residual velocity
+    local function cleanupFollowFly(character, forceReset)
+        character = character or (LocalPlayer and LocalPlayer.Character)
+        local touched = false
+
+        if followBodyVelocity then
+            pcall(function()
+                followBodyVelocity:Destroy()
+            end)
+            followBodyVelocity = nil
+            touched = true
+        end
+
+        if followFlying then
+            followFlying = false
+            if not noclipEnabled then
+                setCharacterCollide(character, true)
+            end
+            touched = true
+        end
+
+        if character and (forceReset or touched) then
+            resetCharacterPhysics(character)
+        end
+    end
+
     local function stopFollow()
         followEnabled = false
         if followConn then
@@ -418,20 +444,7 @@ return function(Tab, UI, Window)
             end)
         end
 
-        if followFlying then
-            if not noclipEnabled then
-                setCharacterCollide(myChar, true)
-                resetCharacterPhysics(myChar)
-            end
-            followFlying = false
-        end
-
-        if followBodyVelocity then
-            pcall(function()
-                followBodyVelocity:Destroy()
-            end)
-            followBodyVelocity = nil
-        end
+        cleanupFollowFly(myChar)
     end
 
     local function startFollow()
@@ -455,15 +468,24 @@ return function(Tab, UI, Window)
                 return
             end
 
+            local myChar = LocalPlayer and LocalPlayer.Character
+            if not followFlyEnabled and followBodyVelocity then
+                -- Fly follow was disabled mid-air; remove lingering BodyVelocity so we stop instantly
+                cleanupFollowFly(myChar)
+            end
+
             local targetPlayer = resolveFollowTarget()
             if not targetPlayer then
+                -- target vanished; make sure we do not keep drifting with old BodyVelocity
+                if followBodyVelocity then
+                    cleanupFollowFly(myChar)
+                end
                 return
             end
 
             local targetChar = targetPlayer.Character
             local targetRoot = targetChar and getRootPart(targetChar)
 
-            local myChar = LocalPlayer and LocalPlayer.Character
             local myHum = getHumanoid(myChar)
             local myRoot = getRootPart(myChar)
 
@@ -693,13 +715,9 @@ return function(Tab, UI, Window)
         CurrentValue = false,
         Callback = function(enabled)
             followFlyEnabled = enabled
-            if not enabled and followFlying then
-                local myChar = LocalPlayer and LocalPlayer.Character
-                if not noclipEnabled then
-                    setCharacterCollide(myChar, true)
-                    resetCharacterPhysics(myChar)
-                end
-                followFlying = false
+            if not enabled then
+                -- Always clear BodyVelocity to avoid drifting when fly follow is toggled off mid-flight
+                cleanupFollowFly(LocalPlayer and LocalPlayer.Character)
             end
         end,
     })
