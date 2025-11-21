@@ -589,14 +589,17 @@ return function(Tab, UI, Window)
                         followWanderOffset = nil
                         myHum:MoveTo(targetRoot.Position)
                     else
+                        -- if we're already close, stay mostly still to avoid constant circling
+                        if distance < 7 then
+                            myHum:Move(Vector3.new(), true)
+                            return
+                        end
+
                         -- pick a small orbit/wander radius with a minimum so we don't spin in place
                         local radius = math.clamp(distance, 5, 10)
                         if followOrbit then
-                            if radius < 5 then
-                                radius = 5
-                            end
-                            -- smooth continuous orbit
-                            followOrbitAngle = (followOrbitAngle + (followOrbitSpeed * dt)) % (math.pi * 2)
+                            -- smooth continuous orbit, slower to reduce jitter
+                            followOrbitAngle = (followOrbitAngle + (math.min(followOrbitSpeed, 1.2) * dt)) % (math.pi * 2)
                             local offset = Vector3.new(math.cos(followOrbitAngle), 0, math.sin(followOrbitAngle)) *
                             radius
                             local orbitPos = targetRoot.Position + offset
@@ -609,12 +612,13 @@ return function(Tab, UI, Window)
                                 myHum:Move(Vector3.new(), true)
                             end
                         else
-                            -- random wander around the target
+                            -- random wander around the target, with longer pauses
                             local now = tick()
                             if not followWanderOffset or now >= followNextWanderTime then
                                 local angle = math.random() * math.pi * 2
-                                followWanderOffset = Vector3.new(math.cos(angle), 0, math.sin(angle)) * radius
-                                followNextWanderTime = now + math.random(2, 4)
+                                local wanderRadius = math.clamp(radius, 4, 8)
+                                followWanderOffset = Vector3.new(math.cos(angle), 0, math.sin(angle)) * wanderRadius
+                                followNextWanderTime = now + math.random(3, 5)
                             end
 
                             local wanderPos = targetRoot.Position + followWanderOffset
